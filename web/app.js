@@ -535,7 +535,7 @@ function applyLocale() {
     const selected = link.dataset.locale === localeKey;
     if (selected) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
-    const targetPath = link.dataset.locale === "zh-CN" ? "/zh-cn" : "/";
+    const targetPath = link.dataset.locale === "zh-CN" ? "/zh-cn" : "/en";
     link.href = `${targetPath}${window.location.search}${window.location.hash}`;
   }
 }

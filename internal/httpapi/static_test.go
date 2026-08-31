@@ -7,21 +7,63 @@ import (
 	"testing"
 )
 
-func TestPlayerWebHandlerServesEmbeddedUI(t *testing.T) {
+func TestPlayerWebHandlerRedirectsRootByPreferredLanguage(t *testing.T) {
 	t.Parallel()
 
-	request := httptest.NewRequest(http.MethodGet, "/", nil)
-	response := httptest.NewRecorder()
-	playerWebHandler().ServeHTTP(response, request)
+	tests := []struct {
+		name           string
+		acceptLanguage string
+		wantLocation   string
+	}{
+		{name: "Chinese", acceptLanguage: "zh-CN,zh;q=0.9,en;q=0.8", wantLocation: "/zh-cn?demo=1"},
+		{name: "Traditional Chinese", acceptLanguage: "zh-Hant,en;q=0.8", wantLocation: "/zh-cn?demo=1"},
+		{name: "English", acceptLanguage: "en-US,en;q=0.9,zh;q=0.8", wantLocation: "/en?demo=1"},
+		{name: "quality", acceptLanguage: "zh-CN;q=0.4,en-US;q=0.9", wantLocation: "/en?demo=1"},
+		{name: "fallback", acceptLanguage: "fr-FR", wantLocation: "/en?demo=1"},
+	}
 
-	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", response.Code)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			request := httptest.NewRequest(http.MethodGet, "/?demo=1", nil)
+			request.Header.Set("Accept-Language", test.acceptLanguage)
+			response := httptest.NewRecorder()
+			playerWebHandler().ServeHTTP(response, request)
+
+			if response.Code != http.StatusFound {
+				t.Fatalf("status = %d, want 302", response.Code)
+			}
+			if location := response.Header().Get("Location"); location != test.wantLocation {
+				t.Fatalf("Location = %q, want %q", location, test.wantLocation)
+			}
+			if cacheControl := response.Header().Get("Cache-Control"); cacheControl != "no-store" {
+				t.Fatalf("Cache-Control = %q, want no-store", cacheControl)
+			}
+			if vary := response.Header().Get("Vary"); vary != "Accept-Language" {
+				t.Fatalf("Vary = %q, want Accept-Language", vary)
+			}
+		})
 	}
-	if !strings.Contains(response.Body.String(), "Commute Podcasts") {
-		t.Fatal("embedded index does not contain the player title")
-	}
-	if language := response.Header().Get("Content-Language"); language != "en" {
-		t.Fatalf("Content-Language = %q, want en", language)
+}
+
+func TestPlayerWebHandlerServesEnglishRoute(t *testing.T) {
+	t.Parallel()
+
+	for _, path := range []string{"/en", "/en/"} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		response := httptest.NewRecorder()
+		playerWebHandler().ServeHTTP(response, request)
+
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s: status = %d, want 200", path, response.Code)
+		}
+		if !strings.Contains(response.Body.String(), "Commute Podcasts") {
+			t.Fatalf("%s: embedded index does not contain the player title", path)
+		}
+		if language := response.Header().Get("Content-Language"); language != "en" {
+			t.Fatalf("%s: Content-Language = %q, want en", path, language)
+		}
 	}
 }
 
