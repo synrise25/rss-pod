@@ -38,8 +38,8 @@ func TestPlayerWebHandlerServesChineseRoute(t *testing.T) {
 	if !strings.Contains(response.Body.String(), `src="/app.js"`) {
 		t.Fatal("Chinese route does not serve the player application")
 	}
-	if language := response.Header().Get("Content-Language"); language != "zh-CN" {
-		t.Fatalf("Content-Language = %q, want zh-CN", language)
+	if language := response.Header().Get("Content-Language"); language != "" {
+		t.Fatalf("Content-Language = %q, want no header for the English HTML shell", language)
 	}
 }
 
