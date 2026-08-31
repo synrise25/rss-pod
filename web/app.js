@@ -2,10 +2,116 @@ const SPEED_KEY = "rss-pod.player-speed";
 const RESUME_KEY = "rss-pod.resume-state";
 const DEMO_AUDIO = "/demo.mp3";
 
+const localeKey = /^\/zh-cn(?:\/|$)/i.test(window.location.pathname) ? "zh-CN" : "en";
+const copy = {
+  en: {
+    lang: "en",
+    documentTitle: "Commute Podcasts",
+    languageLabel: "Language",
+    dateTabsLabel: "Choose a date",
+    sourceSectionLabel: "Filter by source",
+    sourceFilterLabel: "Feeds",
+    episodeRegionLabel: "Podcast episodes",
+    playerLabel: "Player",
+    play: "Play",
+    pause: "Pause",
+    previous: "Previous episode",
+    next: "Next episode",
+    nowPlaying: "PLAYING",
+    chooseEpisode: "Choose an episode",
+    progressLabel: "Playback progress",
+    speedLabel: "Speed",
+    playbackSpeed: "Playback speed",
+    loading: "Loading podcasts…",
+    loadError: "Podcasts are unavailable right now. Please try again later.",
+    empty: "No matching podcasts for this day",
+    allSources: "All",
+    untitled: "Untitled episode",
+    durationUnavailable: "Duration unavailable",
+    mediaAlbum: "Commute Podcasts",
+    relativeDates: ["Today", "Yesterday", "2 days ago"],
+    dateLocale: "en-US",
+    greetings: ["Good morning", "Good afternoon", "Good afternoon", "Good evening"],
+    greeting: (value) => `${value}. What's worth a listen?`,
+    episodeCount: (count) => `${count} ${count === 1 ? "episode" : "episodes"}`,
+    playEpisode: (title) => `Play: ${title}`,
+    pauseEpisode: (title) => `Pause: ${title}`,
+    durationLabel: (duration) => `Duration ${duration}`,
+  },
+  "zh-CN": {
+    lang: "zh-CN",
+    documentTitle: "通勤播客",
+    languageLabel: "语言",
+    dateTabsLabel: "选择日期",
+    sourceSectionLabel: "按来源筛选",
+    sourceFilterLabel: "内容来源",
+    episodeRegionLabel: "播客列表",
+    playerLabel: "播放器",
+    play: "播放",
+    pause: "暂停",
+    previous: "上一条",
+    next: "下一条",
+    nowPlaying: "正在播放",
+    chooseEpisode: "选择一条播客开始播放",
+    progressLabel: "播放进度",
+    speedLabel: "播放倍速",
+    playbackSpeed: "播放速度",
+    loading: "正在载入播客…",
+    loadError: "暂时无法载入播客，请稍后重试",
+    empty: "这一天还没有符合条件的播客",
+    allSources: "全部",
+    untitled: "未命名播客",
+    durationUnavailable: "暂无播放时长",
+    mediaAlbum: "通勤播客",
+    relativeDates: ["今天", "昨天", "前天"],
+    dateLocale: "zh-CN",
+    greetings: ["早上好", "中午好", "下午好", "晚上好"],
+    greeting: (value) => `${value}，今天听什么？`,
+    episodeCount: (count) => `${count} 条`,
+    playEpisode: (title) => `播放：${title}`,
+    pauseEpisode: (title) => `暂停：${title}`,
+    durationLabel: (duration) => `播放时长 ${duration}`,
+  },
+}[localeKey];
+
+const demoContent = {
+  en: {
+    sources: ["Daily Brief", "Tech Radar", "Deep Reads"],
+    titles: [
+      "Why important thoughts surface at bedtime",
+      "Open-source projects worth watching — Issue 182",
+      "What would you do with more time?",
+      "Can waking up early change your life?",
+      "How engineers choose the right technology",
+      "Which jobs will AI replace—and create?",
+      "Five ideas worth revisiting",
+      "How a small team maintains a large project",
+    ],
+  },
+  "zh-CN": {
+    sources: ["知乎日报", "V2EX 热门", "知乎话题"],
+    titles: [
+      "为什么我们总在睡前想起重要的事？关于记忆与焦虑的科学解释",
+      "本周值得关注的开源项目 第 182 期",
+      "如果给你一笔时间，你会用来做什么？来自 238 个真实回答的启发",
+      "早起真的能改变人生吗？一项长达 5 年的追踪研究",
+      "程序员如何优雅地进行技术选型？来自一线团队的实践经验",
+      "AI 会取代哪些工作，又会创造哪些新机会？",
+      "昨天最值得认真读完的五个回答",
+      "一个小团队如何维护大型开源项目",
+    ],
+  },
+}[localeKey];
+
 const elements = {
   greeting: document.querySelector("#greeting"),
+  languageSwitcher: document.querySelector("#language-switcher"),
+  languageLinks: [...document.querySelectorAll("[data-locale]")],
   dateTabs: document.querySelector("#date-tabs"),
+  sourceFilterSection: document.querySelector("#source-filter-section"),
+  sourceFilterLabel: document.querySelector("#source-filter-label"),
   sourceFilters: document.querySelector("#source-filters"),
+  episodeRegion: document.querySelector("#episode-region"),
   episodeList: document.querySelector("#episode-list"),
   statusMessage: document.querySelector("#status-message"),
   rowTemplate: document.querySelector("#episode-row-template"),
@@ -19,8 +125,14 @@ const elements = {
   progress: document.querySelector("#progress"),
   elapsedTime: document.querySelector("#elapsed-time"),
   remainingTime: document.querySelector("#remaining-time"),
+  playerDock: document.querySelector("#player-dock"),
+  nowPlayingLabel: document.querySelector("#now-playing-label"),
+  speedLabel: document.querySelector("#speed-label"),
+  speedLegend: document.querySelector("#speed-legend"),
   speedButtons: [...document.querySelectorAll("[data-speed]")],
 };
+
+applyLocale();
 
 const state = {
   sources: [],
@@ -44,7 +156,7 @@ renderSpeed();
 loadPlayer();
 
 async function loadPlayer() {
-  setStatus("正在载入播客…");
+  setStatus(copy.loading);
   try {
     const payload = isDemoMode() ? demoPayload() : await fetchPlayerData();
     state.sources = payload.sources;
@@ -57,7 +169,7 @@ async function loadPlayer() {
     restoreLastEpisode();
   } catch (error) {
     console.error("load player", error);
-    setStatus("暂时无法载入播客，请稍后重试");
+    setStatus(copy.loadError);
     renderDateTabs();
     renderSourceFilters();
   }
@@ -112,7 +224,7 @@ function renderDateTabs() {
     const count = document.createElement("span");
     count.className = "date-count";
     count.textContent = String(countEpisodesForDate(option.key));
-    count.setAttribute("aria-label", `${count.textContent} 条`);
+    count.setAttribute("aria-label", copy.episodeCount(Number(count.textContent)));
     button.append(label, count);
 
     button.addEventListener("click", () => {
@@ -125,7 +237,7 @@ function renderDateTabs() {
 
 function renderSourceFilters() {
   elements.sourceFilters.replaceChildren();
-  const sources = [{ id: "all", name: "全部" }, ...state.sources];
+  const sources = [{ id: "all", name: copy.allSources }, ...state.sources];
   for (const source of sources) {
     const button = document.createElement("button");
     button.className = "source-filter";
@@ -147,7 +259,7 @@ function renderEpisodeList() {
   elements.episodeList.replaceChildren();
   const episodes = visibleEpisodes();
   if (episodes.length === 0) {
-    setStatus("这一天还没有符合条件的播客");
+    setStatus(copy.empty);
     updateQueueButtons();
     return;
   }
@@ -163,12 +275,18 @@ function renderEpisodeList() {
     const playButton = row.querySelector(".episode-play-button");
     const playIcon = row.querySelector(".episode-play-button img");
     const isPlaying = episode.id === state.currentEpisodeID && !elements.audio.paused;
-    playButton.setAttribute("aria-label", `${isPlaying ? "暂停" : "播放"}：${episode.title}`);
+    playButton.setAttribute(
+      "aria-label",
+      isPlaying ? copy.pauseEpisode(episode.title) : copy.playEpisode(episode.title),
+    );
     playIcon.src = isPlaying ? "/icons/pause.svg" : "/icons/play.svg";
     playButton.addEventListener("click", () => toggleEpisode(episode));
 
     row.tabIndex = 0;
-    row.setAttribute("aria-label", `${isPlaying ? "暂停" : "播放"}：${episode.title}`);
+    row.setAttribute(
+      "aria-label",
+      isPlaying ? copy.pauseEpisode(episode.title) : copy.playEpisode(episode.title),
+    );
     row.addEventListener("click", (event) => {
       if (event.target.closest("button, a, input")) return;
       toggleEpisode(episode);
@@ -270,7 +388,7 @@ function bindPlayerEvents() {
 function renderPlaybackState() {
   const playing = !elements.audio.paused;
   elements.playToggleIcon.src = playing ? "/icons/pause.svg" : "/icons/play.svg";
-  elements.playToggle.setAttribute("aria-label", playing ? "暂停" : "播放");
+  elements.playToggle.setAttribute("aria-label", playing ? copy.pause : copy.play);
   renderEpisodeList();
   scrollCurrentEpisodeIntoView();
 }
@@ -336,7 +454,7 @@ function normalizeEpisode(episode) {
   return {
     id: String(episode.id || ""),
     sourceID: String(episode.source_id || ""),
-    title: String(episode.title || "未命名播客"),
+    title: String(episode.title || copy.untitled),
     audioURL: String(episode.audio_url || ""),
     publishedAt,
     durationSeconds: Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : null,
@@ -349,12 +467,12 @@ function renderEpisodeDuration(element, durationSeconds) {
   if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
     element.textContent = "--:--";
     element.removeAttribute("datetime");
-    element.setAttribute("aria-label", "暂无播放时长");
+    element.setAttribute("aria-label", copy.durationUnavailable);
     return;
   }
   element.textContent = formatTotalDuration(durationSeconds);
   element.dateTime = `PT${Math.round(durationSeconds)}S`;
-  element.setAttribute("aria-label", `播放时长 ${element.textContent}`);
+  element.setAttribute("aria-label", copy.durationLabel(element.textContent));
 }
 
 function scrollCurrentEpisodeIntoView() {
@@ -394,25 +512,56 @@ function sourceName(sourceID) {
   return state.sources.find((source) => source.id === sourceID)?.name || sourceID;
 }
 
+function applyLocale() {
+  document.documentElement.lang = copy.lang;
+  document.title = copy.documentTitle;
+  elements.languageSwitcher.setAttribute("aria-label", copy.languageLabel);
+  elements.dateTabs.setAttribute("aria-label", copy.dateTabsLabel);
+  elements.sourceFilterSection.setAttribute("aria-label", copy.sourceSectionLabel);
+  elements.sourceFilterLabel.textContent = copy.sourceFilterLabel;
+  elements.episodeRegion.setAttribute("aria-label", copy.episodeRegionLabel);
+  elements.playerDock.setAttribute("aria-label", copy.playerLabel);
+  elements.playToggle.setAttribute("aria-label", copy.play);
+  elements.previousButton.setAttribute("aria-label", copy.previous);
+  elements.nextButton.setAttribute("aria-label", copy.next);
+  elements.nowPlayingLabel.textContent = copy.nowPlaying;
+  elements.nowPlayingTitle.textContent = copy.chooseEpisode;
+  elements.progress.setAttribute("aria-label", copy.progressLabel);
+  elements.speedLabel.textContent = copy.speedLabel;
+  elements.speedLegend.textContent = copy.playbackSpeed;
+  elements.statusMessage.textContent = copy.loading;
+
+  for (const link of elements.languageLinks) {
+    const selected = link.dataset.locale === localeKey;
+    if (selected) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+    const targetPath = link.dataset.locale === "zh-CN" ? "/zh-cn" : "/";
+    link.href = `${targetPath}${window.location.search}${window.location.hash}`;
+  }
+}
+
 function updateGreeting() {
   const hour = new Date().getHours();
-  let greeting = "晚上好";
-  if (hour >= 5 && hour < 11) greeting = "早上好";
-  else if (hour >= 11 && hour < 14) greeting = "中午好";
-  else if (hour >= 14 && hour < 18) greeting = "下午好";
-  elements.greeting.textContent = `${greeting}，今天听什么？`;
+  let greeting = copy.greetings[3];
+  if (hour >= 5 && hour < 11) greeting = copy.greetings[0];
+  else if (hour >= 11 && hour < 14) greeting = copy.greetings[1];
+  else if (hour >= 14 && hour < 18) greeting = copy.greetings[2];
+  elements.greeting.textContent = copy.greeting(greeting);
 }
 
 function createDateOptions() {
   const today = startOfDay(new Date());
   return [
-    { relativeLabel: "今天", date: today },
-    { relativeLabel: "昨天", date: addDays(today, -1) },
-    { relativeLabel: "前天", date: addDays(today, -2) },
+    { relativeLabel: copy.relativeDates[0], date: today },
+    { relativeLabel: copy.relativeDates[1], date: addDays(today, -1) },
+    { relativeLabel: copy.relativeDates[2], date: addDays(today, -2) },
   ].map((option) => ({
     ...option,
     key: dateKey(option.date),
-    monthDay: `${option.date.getMonth() + 1}月${option.date.getDate()}日`,
+    monthDay: new Intl.DateTimeFormat(copy.dateLocale, {
+      month: "short",
+      day: "numeric",
+    }).format(option.date),
   }));
 }
 
@@ -510,7 +659,7 @@ function updateMediaSession(episode) {
   navigator.mediaSession.metadata = new MediaMetadata({
     title: episode.title,
     artist: sourceName(episode.sourceID),
-    album: "通勤播客",
+    album: copy.mediaAlbum,
   });
   const handlers = {
     play: () => safePlay(),
@@ -540,19 +689,19 @@ function demoPayload() {
   };
   return {
     sources: [
-      { id: "zhihu-daily", name: "知乎日报" },
-      { id: "v2ex-hot", name: "V2EX 热门" },
-      { id: "zhihu-topic", name: "知乎话题" },
+      { id: "zhihu-daily", name: demoContent.sources[0] },
+      { id: "v2ex-hot", name: demoContent.sources[1] },
+      { id: "zhihu-topic", name: demoContent.sources[2] },
     ],
     episodes: [
-      demoEpisode("demo-1", "zhihu-daily", "为什么我们总在睡前想起重要的事？关于记忆与焦虑的科学解释", at(today, 7, 30)),
-      demoEpisode("demo-2", "v2ex-hot", "本周值得关注的开源项目 第 182 期", at(today, 6, 45)),
-      demoEpisode("demo-3", "zhihu-topic", "如果给你一笔时间，你会用来做什么？来自 238 个真实回答的启发", at(today, 5, 40)),
-      demoEpisode("demo-4", "zhihu-daily", "早起真的能改变人生吗？一项长达 5 年的追踪研究", at(today, 5, 10)),
-      demoEpisode("demo-5", "v2ex-hot", "程序员如何优雅地进行技术选型？来自一线团队的实践经验", at(today, 4, 20)),
-      demoEpisode("demo-6", "zhihu-topic", "AI 会取代哪些工作，又会创造哪些新机会？", null, at(today, 3, 55)),
-      demoEpisode("demo-7", "zhihu-daily", "昨天最值得认真读完的五个回答", at(yesterday, 20, 15)),
-      demoEpisode("demo-8", "v2ex-hot", "一个小团队如何维护大型开源项目", at(dayBefore, 18, 20)),
+      demoEpisode("demo-1", "zhihu-daily", demoContent.titles[0], at(today, 7, 30)),
+      demoEpisode("demo-2", "v2ex-hot", demoContent.titles[1], at(today, 6, 45)),
+      demoEpisode("demo-3", "zhihu-topic", demoContent.titles[2], at(today, 5, 40)),
+      demoEpisode("demo-4", "zhihu-daily", demoContent.titles[3], at(today, 5, 10)),
+      demoEpisode("demo-5", "v2ex-hot", demoContent.titles[4], at(today, 4, 20)),
+      demoEpisode("demo-6", "zhihu-topic", demoContent.titles[5], null, at(today, 3, 55)),
+      demoEpisode("demo-7", "zhihu-daily", demoContent.titles[6], at(yesterday, 20, 15)),
+      demoEpisode("demo-8", "v2ex-hot", demoContent.titles[7], at(dayBefore, 18, 20)),
     ],
   };
 }

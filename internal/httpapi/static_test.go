@@ -17,8 +17,29 @@ func TestPlayerWebHandlerServesEmbeddedUI(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", response.Code)
 	}
-	if !strings.Contains(response.Body.String(), "通勤播客") {
+	if !strings.Contains(response.Body.String(), "Commute Podcasts") {
 		t.Fatal("embedded index does not contain the player title")
+	}
+	if language := response.Header().Get("Content-Language"); language != "en" {
+		t.Fatalf("Content-Language = %q, want en", language)
+	}
+}
+
+func TestPlayerWebHandlerServesChineseRoute(t *testing.T) {
+	t.Parallel()
+
+	request := httptest.NewRequest(http.MethodGet, "/zh-cn", nil)
+	response := httptest.NewRecorder()
+	playerWebHandler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", response.Code)
+	}
+	if !strings.Contains(response.Body.String(), `src="/app.js"`) {
+		t.Fatal("Chinese route does not serve the player application")
+	}
+	if language := response.Header().Get("Content-Language"); language != "zh-CN" {
+		t.Fatalf("Content-Language = %q, want zh-CN", language)
 	}
 }
 

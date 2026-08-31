@@ -24,6 +24,13 @@ func playerWebHandler() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
+		if r.URL.Path == "/zh-cn" || r.URL.Path == "/zh-cn/" {
+			w.Header().Set("Content-Language", "zh-CN")
+			r = r.Clone(r.Context())
+			r.URL.Path = "/"
+		} else if r.URL.Path == "/" {
+			w.Header().Set("Content-Language", "en")
+		}
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Cache-Control", "no-cache")
