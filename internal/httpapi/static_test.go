@@ -28,18 +28,20 @@ func TestPlayerWebHandlerServesEmbeddedUI(t *testing.T) {
 func TestPlayerWebHandlerServesChineseRoute(t *testing.T) {
 	t.Parallel()
 
-	request := httptest.NewRequest(http.MethodGet, "/zh-cn", nil)
-	response := httptest.NewRecorder()
-	playerWebHandler().ServeHTTP(response, request)
+	for _, path := range []string{"/zh-cn", "/zh-cn/"} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		response := httptest.NewRecorder()
+		playerWebHandler().ServeHTTP(response, request)
 
-	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", response.Code)
-	}
-	if !strings.Contains(response.Body.String(), `src="/app.js"`) {
-		t.Fatal("Chinese route does not serve the player application")
-	}
-	if values, exists := response.Header()["Content-Language"]; exists {
-		t.Fatalf("Content-Language = %q, want header omitted for the English HTML shell", values)
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s: status = %d, want 200", path, response.Code)
+		}
+		if !strings.Contains(response.Body.String(), `src="/app.js"`) {
+			t.Fatalf("%s: Chinese route does not serve the player application", path)
+		}
+		if values, exists := response.Header()["Content-Language"]; exists {
+			t.Fatalf("%s: Content-Language = %q, want header omitted for the English HTML shell", path, values)
+		}
 	}
 }
 
