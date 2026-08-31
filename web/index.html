@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#f4f9ff" />
     <meta name="color-scheme" content="light" />
-    <title>通勤播客</title>
+    <title>Commute Podcasts</title>
     <link rel="icon" type="image/png" href="/icons/favicon.png" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <link rel="stylesheet" href="/app.css" />
@@ -14,38 +14,44 @@
   <body>
     <main class="app-shell">
       <header class="page-header">
-        <h1 id="greeting">今天听什么？</h1>
-        <nav id="date-tabs" class="date-tabs" aria-label="选择日期"></nav>
+        <div class="header-heading-row">
+          <h1 id="greeting">What's worth a listen?</h1>
+          <nav id="language-switcher" class="language-switcher" aria-label="Language">
+            <a href="/" data-locale="en" aria-current="page">EN</a>
+            <a href="/zh-cn" data-locale="zh-CN">中文</a>
+          </nav>
+        </div>
+        <nav id="date-tabs" class="date-tabs" aria-label="Choose a date"></nav>
       </header>
 
-      <section class="source-filter-section" aria-label="按来源筛选">
-        <span class="source-filter-label">内容来源</span>
+      <section id="source-filter-section" class="source-filter-section" aria-label="Filter by source">
+        <span id="source-filter-label" class="source-filter-label">Feeds</span>
         <div id="source-filters" class="source-filters"></div>
       </section>
 
-      <section class="episode-region" aria-label="播客列表">
-        <p id="status-message" class="status-message" role="status" aria-live="polite">正在载入播客…</p>
+      <section id="episode-region" class="episode-region" aria-label="Podcast episodes">
+        <p id="status-message" class="status-message" role="status" aria-live="polite">Loading podcasts…</p>
         <div id="episode-list" class="episode-list" role="list"></div>
       </section>
 
-      <section class="player-dock" aria-label="播放器">
+      <section id="player-dock" class="player-dock" aria-label="Player">
         <div class="transport-controls">
-          <button id="play-toggle" class="icon-button icon-button-primary" type="button" aria-label="播放" disabled>
+          <button id="play-toggle" class="icon-button icon-button-primary" type="button" aria-label="Play" disabled>
             <img id="play-toggle-icon" src="/icons/play.svg" alt="" />
           </button>
-          <button id="previous-button" class="icon-button icon-button-secondary" type="button" aria-label="上一条" disabled>
+          <button id="previous-button" class="icon-button icon-button-secondary" type="button" aria-label="Previous episode" disabled>
             <img src="/icons/previous.svg" alt="" />
           </button>
-          <button id="next-button" class="icon-button icon-button-secondary" type="button" aria-label="下一条" disabled>
+          <button id="next-button" class="icon-button icon-button-secondary" type="button" aria-label="Next episode" disabled>
             <img src="/icons/next.svg" alt="" />
           </button>
         </div>
 
         <div class="now-playing">
           <p class="now-playing-label">
-            <span>正在播放</span><span id="now-playing-source" class="now-playing-source"></span>
+            <span id="now-playing-label">PLAYING</span><span id="now-playing-source" class="now-playing-source"></span>
           </p>
-          <p id="now-playing-title" class="now-playing-title">选择一条播客开始播放</p>
+          <p id="now-playing-title" class="now-playing-title">Choose an episode</p>
           <div class="progress-row">
             <input
               id="progress"
@@ -55,7 +61,7 @@
               max="100"
               step="0.1"
               value="0"
-              aria-label="播放进度"
+              aria-label="Playback progress"
               disabled
             />
             <div class="time-readout" aria-live="off">
@@ -66,9 +72,9 @@
         </div>
 
         <div class="speed-panel">
-          <span class="speed-label">播放倍速</span>
+          <span id="speed-label" class="speed-label">Speed</span>
           <fieldset class="speed-control">
-            <legend class="visually-hidden">播放速度</legend>
+            <legend id="speed-legend" class="visually-hidden">Playback speed</legend>
             <button type="button" data-speed="1">1.0×</button>
             <button type="button" data-speed="1.2">1.2×</button>
             <button type="button" data-speed="1.5">1.5×</button>

@@ -24,7 +24,7 @@ your commute, drive, or walk an effortless way to stay informed.
 No screen, no endless backlog—put on your headphones and let the road bring you
 up to speed.
 
-![rss-pod web player](docs/assets/player.png)
+![rss-pod web player in English](docs/assets/player-en.png)
 
 rss-pod is a Go application that turns RSS items into conversational podcast
 episodes. It resolves source content, asks an OpenAI-compatible LLM for a
@@ -115,7 +115,8 @@ go run ./cmd/rss-pod run
 
 The public player listens on `:8080`. Health checks and management endpoints
 listen on `127.0.0.1:8081` and are intentionally unavailable on the public
-listener.
+listener. The player uses English at `/` and Simplified Chinese at `/zh-cn`;
+the language switcher keeps the current query string.
 
 The main commands are:
 
