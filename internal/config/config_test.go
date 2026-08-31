@@ -267,6 +267,13 @@ func TestRuntimeTimeoutDefaults(t *testing.T) {
 	if jobTimeout != DefaultJobTimeout {
 		t.Fatalf("default job timeout = %s, want %s", jobTimeout, DefaultJobTimeout)
 	}
+	jobFetchPollInterval, err := (JobsConfig{}).FetchPollIntervalDuration()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if jobFetchPollInterval != DefaultJobFetchPollInterval {
+		t.Fatalf("default job fetch poll interval = %s, want %s", jobFetchPollInterval, DefaultJobFetchPollInterval)
+	}
 
 	storageTimeout, err := (StorageConfig{}).TimeoutDuration()
 	if err != nil {
@@ -282,9 +289,15 @@ func TestRuntimeTimeoutValidation(t *testing.T) {
 		if _, err := (JobsConfig{Timeout: value}).TimeoutDuration(); err == nil {
 			t.Errorf("JobsConfig timeout %q unexpectedly succeeded", value)
 		}
+		if _, err := (JobsConfig{FetchPollInterval: value}).FetchPollIntervalDuration(); err == nil {
+			t.Errorf("JobsConfig fetch poll interval %q unexpectedly succeeded", value)
+		}
 		if _, err := (StorageConfig{Timeout: value}).TimeoutDuration(); err == nil {
 			t.Errorf("StorageConfig timeout %q unexpectedly succeeded", value)
 		}
+	}
+	if _, err := (JobsConfig{FetchPollInterval: "50ms"}).FetchPollIntervalDuration(); err == nil {
+		t.Error("JobsConfig fetch poll interval below River fetch cooldown unexpectedly succeeded")
 	}
 }
 

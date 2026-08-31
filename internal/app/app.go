@@ -92,6 +92,10 @@ func newRiverClient(cfg *config.Config, pool *pgxpool.Pool, queueNames []string)
 	if err != nil {
 		return nil, fmt.Errorf("parse River job timeout: %w", err)
 	}
+	fetchPollInterval, err := cfg.Runtime.Jobs.FetchPollIntervalDuration()
+	if err != nil {
+		return nil, fmt.Errorf("parse River fetch poll interval: %w", err)
+	}
 	var storageClient *storage.Client
 	if slices.Contains(queueNames, "tts") || slices.Contains(queueNames, "media") {
 		var err error
@@ -115,7 +119,11 @@ func newRiverClient(cfg *config.Config, pool *pgxpool.Pool, queueNames []string)
 	river.AddWorker(workers, generateScriptWorker)
 	river.AddWorker(workers, generateTTSWorker)
 	river.AddWorker(workers, composeEpisodeWorker)
-	riverConfig := &river.Config{Workers: workers, JobTimeout: jobTimeout}
+	riverConfig := &river.Config{
+		Workers:           workers,
+		JobTimeout:        jobTimeout,
+		FetchPollInterval: fetchPollInterval,
+	}
 	if len(queueNames) > 0 {
 		riverConfig.Queues = make(map[string]river.QueueConfig, len(queueNames))
 		for _, name := range queueNames {
