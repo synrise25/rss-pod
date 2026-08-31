@@ -1,0 +1,10 @@
+.git
+.github
+.private-context
+.data
+.env
+.DS_Store
+config.yaml
+docs
+README*
+rss-pod

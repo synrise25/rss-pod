@@ -1,0 +1,279 @@
+# Configuration format version; increment for incompatible changes.
+# 配置格式版本；发生不兼容变更时递增。
+version: 6
+
+runtime:
+  http:
+    # The public listener only serves player assets and /api/v1/player/*.
+    # 公共 listener 只提供播放器静态资源和 /api/v1/player/*。
+    listen: :8080
+    # The management API, health checks, and podcast RSS are bound to loopback inside the container.
+    # 管理 API、健康检查和 Podcast RSS 强制绑定容器内部回环地址。
+    management_listen: 127.0.0.1:8081
+
+  database:
+    type: postgres
+    host: env://DATABASE_HOST
+    port: 5432
+    name: rsspod
+    user: env://DATABASE_USER
+    password: env://DATABASE_PASSWORD
+    # Use disable only locally or on trusted networks; use require or verify-full across untrusted networks.
+    # 本机或可信内网可暂用 disable；跨不可信网络应改为 require/verify-full。
+    ssl_mode: disable
+
+  jobs:
+    type: river
+    # Total job deadline; TTS serially generates an episode, so keep this well above a single service timeout.
+    # 整个 job 的总时限；TTS 会串行生成整集片段，因此应明显长于单次服务超时。
+    timeout: 30m
+    # concurrency is the number of concurrent jobs for this queue per process, not the number of worker processes.
+    # concurrency 是单个进程对该队列的并发 job 数，不是 worker 进程数。
+    # run starts every queue by default; standalone workers select queues with --queues.
+    # 默认 run 启动全部队列；独立 worker 可通过 --queues 选择队列。
+    queues:
+      source:
+        concurrency: 2
+      content:
+        concurrency: 4
+      llm:
+        concurrency: 2
+      tts:
+        concurrency: 4
+      media:
+        concurrency: 2
+
+  storage:
+    type: s3
+    endpoint: env://S3_ENDPOINT
+    # S3 signing requires a region; use us-east-1 when MinIO has no custom region.
+    # S3 签名需要 region；MinIO 未自定义 region 时使用 us-east-1。
+    region: us-east-1
+    access_key: env://S3_ACCESS_KEY_ID
+    secret_key: env://S3_SECRET_ACCESS_KEY
+    private_bucket: rsspod-private
+    media_bucket: rsspod-media
+    # MinIO normally uses path-style; disable it only with bucket subdomains and wildcard DNS.
+    # MinIO 通常使用 path-style；配置 bucket 子域名和通配符 DNS 后才考虑关闭。
+    force_path_style: true
+    # Audio URLs in podcast RSS must be stable; do not use short-lived signed URLs.
+    # Podcast RSS 中的音频 URL 必须长期稳定，不能使用短期签名地址。
+    public_media_base_url: env://PUBLIC_MEDIA_BASE_URL
+    # Per-operation S3/MinIO timeout; the River job has a longer overall deadline.
+    # 单次 S3/MinIO 上传或下载的时限；River job 使用更长的总时限。
+    timeout: 2m
+
+# Service configuration describes external connections only; built-in content strategies are not registered here.
+# 服务配置只描述外部连接；内置内容策略不在这里重复注册。
+services:
+  # Currently only the Jina content strategy needs external service settings.
+  # 目前只有 Jina 内容策略需要外部服务参数。
+  content:
+    jina:
+      base_url: https://r.jina.ai
+      api_key: env://JINA_API_KEY
+      proxy: env://JINA_PROXY
+      timeout: 45s
+      format: markdown
+
+  llm:
+    deepseek:
+      type: openai_compatible
+      base_url: env://LLM_DEEPSEEK_BASE_URL
+      api_key: env://LLM_DEEPSEEK_API_KEY
+      model: env://LLM_DEEPSEEK_MODEL
+      proxy: ""
+      timeout: 5m
+
+    gemini:
+      type: openai_compatible
+      base_url: env://LLM_GEMINI_BASE_URL
+      api_key: env://LLM_GEMINI_API_KEY
+      model: env://LLM_GEMINI_MODEL
+      proxy: ""
+      timeout: 5m
+
+  tts:
+    edge:
+      proxy: env://EDGE_TTS_PROXY
+      connect_timeout: 20s
+      receive_timeout: 120s
+
+    azure:
+      # Leave empty to derive the standard global Azure endpoint from region.
+      # 留空时由 region 生成标准全球 Azure 地址。
+      # For Azure China or custom routes, set the full speech synthesis endpoint.
+      # Azure 中国区或自定义线路可填写完整语音合成 endpoint。
+      endpoint: ""
+      region: env://AZURE_SPEECH_REGION
+      api_key: env://AZURE_SPEECH_KEY
+      # The final composer requires MP3, which is compatible with segmented assembly.
+      # 最终合成器要求 MP3；该格式与现有分段拼接流程兼容。
+      output_format: audio-24khz-48kbitrate-mono-mp3
+      proxy: env://AZURE_SPEECH_PROXY
+      connect_timeout: 20s
+      receive_timeout: 120s
+
+# Each profile defines a complete cast and voice style; a source only selects a profile.
+# 每个 profile 定义一套节目角色和声音表现；source 只选择 profile。
+# voice uses service:voice; MultiTalker appends the talker as service:voice:talker.
+# voice 使用 service:voice；MultiTalker 追加 talker，即 service:voice:talker。
+# Regular profiles may mix TTS services; a MultiTalker profile must use one Azure voice.
+# 普通 profile 可混用 TTS 服务；MultiTalker profile 必须统一使用同一个 Azure voice。
+# Connection settings such as proxy and timeouts are managed by the referenced service.
+# proxy 和 timeout 等连接参数由 voice 引用的服务统一管理。
+dialogue_profiles:
+  general-dialogue:
+    rate: "+0%"
+    volume: "+0%"
+    pitch: "+0Hz"
+    speakers:
+      - id: xiaoya
+        name: 小雅
+        role: >-
+          一位经验丰富、亲切活泼的中文播客主持人。前财经记者和媒体人，擅长从普通听众的视角补足背景、梳理线索、追问关键细节，把陌生或复杂的话题讲得清楚而有画面感。她负责开场、推进和收束讨论，会自然地接住老王的观点，也会在他跳得太快或说得太绝对时替听众追问；表达有温度、有好奇心，不过度煽情，也不假装懂得资料之外的事实。
+        voice: edge:zh-CN-XiaoxiaoNeural
+      - id: laowang
+        name: 老王
+        role: >-
+          一位阅历丰富、说话直接的评论型搭档。做过程序员、产品经理，也创过业，习惯从机制、利益、执行成本和长期影响拆解问题，对流行说法和漂亮包装保持警惕。他负责提出不同角度、检查论据边界、指出容易被忽略的代价，偶尔有克制的吐槽和冷幽默；观点可以犀利，但必须基于提供的资料，不把推测说成事实，也不为了制造冲突而抬杠。
+        voice: edge:zh-CN-YunjianNeural
+
+  v2ex-commentary:
+    # Azure MultiTalker ignores prosody settings; only supporting adapters apply them.
+    # Azure MultiTalker 不使用 prosody 参数；仅支持它们的适配器会应用这些值。
+    rate: "+0%"
+    volume: "+0%"
+    pitch: "+0Hz"
+    speakers:
+      - id: xiaoya
+        name: 小雅
+        role: >-
+          科技播客主持人，长期关注科技行业，习惯从普通用户的真实体验切入。她好奇、反应快，擅长抓住帖子里最值得追问的细节，把老王说得太快、太抽象的地方拉回具体场景。表达活泼但不刻意热场，不懂的地方会直接问，也允许自己边说边调整判断。
+        voice: azure:zh-CN-Multitalker-Xiaochen-Yunhan:DragonHDLatestNeural:xiaochen
+      - id: laowang
+        name: 老王
+        role: >-
+          做过程序员、产品经理，也创过业的科技评论搭档，习惯从机制、成本和实际执行拆问题。他说话直接，偶尔有克制的吐槽，但不会为了显得犀利而否定一切；遇到证据不足会承认边界，也会顺着小雅的追问把判断说得更具体。
+        voice: azure:zh-CN-Multitalker-Xiaochen-Yunhan:DragonHDLatestNeural:yunhan
+
+  zhihu-observer:
+    rate: "+0%"
+    volume: "+0%"
+    pitch: "+0Hz"
+    speakers:
+      - id: xiaoya
+        name: 小雅
+        role: >-
+          一位经验丰富、声音甜美、风格活泼的中文互联网观察类播客主持人。前财经记者、媒体人出身，长期关注中文互联网舆论、公共议题和优质内容如何进入大众视野。她很擅长从普通读者视角切入知乎内容，不管是热榜上的高讨论度提问，还是日报里的精选文章，都能快速提炼背景、争议点和关键观点，把分散的信息整理成清晰好懂、适合播客表达的讨论框架，也总能把老王拉进那些表面热闹、实际很值得深挖的话题里。
+        voice: edge:zh-CN-YunxiaNeural
+      - id: laowang
+        name: 老王
+        role: >-
+          一位资深科技评论员，互联网老兵。做过程序员、产品经理，也创过业，对平台机制、内容传播和叙事包装背后的逻辑格外敏感。面对知乎里的热门议题和精选内容，他不满足于复述高赞观点或文章结论，更喜欢拆开看其中有没有概念混淆、样本偏差、情绪放大和被过度包装的部分，判断哪些是真问题、真趋势，哪些只是平台语境里的短期热度。说话直接、观点犀利，但能把复杂问题聊得很明白。
+        voice: edge:zh-CN-YunjianNeural
+
+defaults:
+  schedule:
+    # The scheduler only evaluates the current minute and does not backfill missed cron runs.
+    # scheduler 只执行当前分钟命中的 cron，不补跑停机期间错过的时间点。
+    timezone: Asia/Shanghai
+
+  # This list defines available LLM services and their fallback order.
+  # 数组定义脚本生成可用的 LLM 服务及尝试顺序。
+  # A source-level llm list replaces the default list instead of merging.
+  # source 中的 llm 会整体替换默认数组，不会合并。
+  # Connection failures, timeouts, rate limits, and server errors fall back; configuration or request errors fail immediately.
+  # 连接失败、超时、限流或服务端错误会尝试下一项；配置或请求错误直接失败。
+  llm:
+    - deepseek
+    - gemini
+
+  generation:
+    target_duration: 3m
+    prompt_template: prompts/default-dialogue.tmpl
+    dialogue_profile: general-dialogue
+
+  # type must be rss-item, derived-rss, or jina:
+  # type 只能是 rss-item、derived-rss 或 jina：
+  # - rss-item: use the entry item's content or description.
+  # - rss-item：直接使用入口 RSS item 的 content/description。
+  # - derived-rss: derive another feed and use its items as Documents.
+  # - derived-rss：从入口 item 推导另一个 RSS，并将其 items 作为 Documents。
+  # - jina: resolve the derived URL through services.content.jina.
+  # - jina：将推导出的 URL 交给 services.content.jina 读取。
+  content:
+    type: rss-item
+
+  limits:
+    max_feed_items_per_run: 5
+    max_documents_per_item: 20
+
+  # Podcast RSS exposes 3 days, shorter than the 7-day MinIO media retention.
+  # Podcast RSS 只暴露最近 3 天，短于 MinIO 的 7 天媒体保留期。
+  # A source may override this window; it only affects RSS output and does not delete database rows.
+  # source 可以覆盖该窗口；它只影响 RSS 输出，不删除数据库记录。
+  podcast:
+    max_age: 72h
+
+sources:
+  - id: zhihu-daily
+    name: 知乎日报
+    enabled: false
+    feed:
+      # Replace with your own RSS or RSSHub endpoint.
+      # 请替换为自己的 RSS 或 RSSHub 地址。
+      url: https://rsshub.example.com/zhihu/daily
+    schedule:
+      cron: "50 21 * * *"
+    generation:
+      dialogue_profile: zhihu-observer
+
+  - id: v2ex-hot
+    name: V2EX 热门
+    enabled: false
+    feed:
+      url: https://rsshub.example.com/v2ex/topics/hot
+    schedule:
+      cron: "50 23 * * *"
+
+    content:
+      type: jina
+      url:
+        from: item.link
+
+    generation:
+      target_duration: 3m
+      dialogue_profile: v2ex-commentary
+
+    llm:
+      - deepseek
+      - gemini
+
+    limits:
+      max_documents_per_item: 300
+
+  - id: zhihu-topic
+    name: 知乎话题
+    enabled: false
+    feed:
+      url: https://rsshub.example.com/zhihu/hot
+    schedule:
+      cron: "50 22 * * *"
+
+    generation:
+      dialogue_profile: zhihu-observer
+
+    # Extract an ID from the entry URL, then fetch a content feed.
+    # 从入口 RSS item 链接提取 ID，再拉取内容 RSS。
+    # Each item in the derived feed becomes a Document.
+    # 二级 RSS 的每个 item 会成为一个 Document。
+    content:
+      type: derived-rss
+      url:
+        from: item.link
+        regex: '^https://www\.zhihu\.com/question/(?P<questionId>\d+)'
+        template: 'https://rsshub.example.com/zhihu/question/{{ .questionId }}'
+
+    llm:
+      - deepseek

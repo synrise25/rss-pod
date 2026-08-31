@@ -1,0 +1,5 @@
+.data/
+.env
+.private-context/
+config.yaml
+.DS_Store

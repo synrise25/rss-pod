@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#f4f9ff" />
+    <meta name="color-scheme" content="light" />
+    <title>通勤播客</title>
+    <link rel="icon" type="image/png" href="/icons/favicon.png" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="stylesheet" href="/app.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="page-header">
+        <h1 id="greeting">今天听什么？</h1>
+        <nav id="date-tabs" class="date-tabs" aria-label="选择日期"></nav>
+      </header>
+
+      <section class="source-filter-section" aria-label="按来源筛选">
+        <span class="source-filter-label">内容来源</span>
+        <div id="source-filters" class="source-filters"></div>
+      </section>
+
+      <section class="episode-region" aria-label="播客列表">
+        <p id="status-message" class="status-message" role="status" aria-live="polite">正在载入播客…</p>
+        <div id="episode-list" class="episode-list" role="list"></div>
+      </section>
+
+      <section class="player-dock" aria-label="播放器">
+        <div class="transport-controls">
+          <button id="play-toggle" class="icon-button icon-button-primary" type="button" aria-label="播放" disabled>
+            <img id="play-toggle-icon" src="/icons/play.svg" alt="" />
+          </button>
+          <button id="previous-button" class="icon-button icon-button-secondary" type="button" aria-label="上一条" disabled>
+            <img src="/icons/previous.svg" alt="" />
+          </button>
+          <button id="next-button" class="icon-button icon-button-secondary" type="button" aria-label="下一条" disabled>
+            <img src="/icons/next.svg" alt="" />
+          </button>
+        </div>
+
+        <div class="now-playing">
+          <p class="now-playing-label">
+            <span>正在播放</span><span id="now-playing-source" class="now-playing-source"></span>
+          </p>
+          <p id="now-playing-title" class="now-playing-title">选择一条播客开始播放</p>
+          <div class="progress-row">
+            <input
+              id="progress"
+              class="progress"
+              type="range"
+              min="0"
+              max="100"
+              step="0.1"
+              value="0"
+              aria-label="播放进度"
+              disabled
+            />
+            <div class="time-readout" aria-live="off">
+              <span id="elapsed-time">0:00</span>
+              <span id="remaining-time">--:--</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="speed-panel">
+          <span class="speed-label">播放倍速</span>
+          <fieldset class="speed-control">
+            <legend class="visually-hidden">播放速度</legend>
+            <button type="button" data-speed="1">1.0×</button>
+            <button type="button" data-speed="1.2">1.2×</button>
+            <button type="button" data-speed="1.5">1.5×</button>
+          </fieldset>
+        </div>
+
+        <audio id="audio" preload="metadata"></audio>
+      </section>
+    </main>
+
+    <template id="episode-row-template">
+      <article class="episode-row" role="listitem">
+        <button class="episode-play-button" type="button">
+          <img src="/icons/play.svg" alt="" />
+        </button>
+        <span class="episode-source"></span>
+        <h2 class="episode-title"></h2>
+        <time class="episode-time"></time>
+      </article>
+    </template>
+  </body>
+</html>
