@@ -1,7 +1,7 @@
 <div align="center">
   <img src="web/icons/apple-touch-icon.png" width="112" alt="rss-pod 图标">
   <h1>rss-pod</h1>
-  <p><strong>把 RSS 内容持续、可靠地转换成自托管 AI 播客。</strong></p>
+  <p><strong>把来不及读的信息，变成路上听得完的播客。</strong></p>
   <p>
     <a href="README.md">English</a>
     ·
@@ -16,6 +16,10 @@
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="MIT 许可证"></a>
   </p>
 </div>
+
+信息不断涌来，真正能留给阅读的时间却越来越少。rss-pod 把你关心的 RSS 内容整理成自然的多人对话播客，让通勤、开车和散步的时间，变成轻松了解世界的一段声音。
+
+不用盯着屏幕，也不必逐篇追赶——戴上耳机，把纷繁的信息交给路上的时间。
 
 ![rss-pod 网页播放器](docs/assets/player.png)
 

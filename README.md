@@ -1,7 +1,7 @@
 <div align="center">
   <img src="web/icons/apple-touch-icon.png" width="112" alt="rss-pod logo">
   <h1>rss-pod</h1>
-  <p><strong>Turn RSS feeds into durable, self-hosted AI podcasts.</strong></p>
+  <p><strong>Turn what you do not have time to read into podcasts for the road.</strong></p>
   <p>
     <a href="README.zh-CN.md">简体中文</a>
     ·
@@ -16,6 +16,13 @@
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="MIT license"></a>
   </p>
 </div>
+
+Information keeps piling up while the time to read keeps shrinking. rss-pod
+turns the RSS feeds you care about into natural multi-speaker podcasts, making
+your commute, drive, or walk an effortless way to stay informed.
+
+No screen, no endless backlog—put on your headphones and let the road bring you
+up to speed.
 
 ![rss-pod web player](docs/assets/player.png)
 
