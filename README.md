@@ -115,8 +115,9 @@ go run ./cmd/rss-pod run
 
 The public player listens on `:8080`. Health checks and management endpoints
 listen on `127.0.0.1:8081` and are intentionally unavailable on the public
-listener. The player uses English at `/` and Simplified Chinese at `/zh-cn`;
-the language switcher keeps the current query string.
+listener. `/` redirects from the browser's preferred language to the stable
+English route at `/en` or Simplified Chinese at `/zh-cn`; the language switcher
+keeps the current query string.
 
 The main commands are:
 
