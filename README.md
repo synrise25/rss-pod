@@ -168,7 +168,8 @@ ghcr.io/synrise25/rss-pod
 ```
 
 Published tags include the full semantic version, the major/minor version, and
-`latest`.
+`latest`. After the container publish succeeds, the workflow also creates a
+GitHub Release with automatically generated release notes.
 
 ## Configuration
 
