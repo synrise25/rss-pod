@@ -25,6 +25,8 @@ const (
 
 const (
 	DefaultJobTimeout              = 30 * time.Minute
+	DefaultJobFetchPollInterval    = 30 * time.Second
+	MinimumJobFetchPollInterval    = 100 * time.Millisecond
 	DefaultStorageOperationTimeout = 2 * time.Minute
 )
 
@@ -80,13 +82,27 @@ func (c DatabaseConfig) URL() string {
 }
 
 type JobsConfig struct {
-	Type    string                 `yaml:"type"`
-	Timeout string                 `yaml:"timeout"`
-	Queues  map[string]QueueConfig `yaml:"queues"`
+	Type              string                 `yaml:"type"`
+	Timeout           string                 `yaml:"timeout"`
+	FetchPollInterval string                 `yaml:"fetch_poll_interval"`
+	Queues            map[string]QueueConfig `yaml:"queues"`
 }
 
 func (c JobsConfig) TimeoutDuration() (time.Duration, error) {
 	return optionalDuration(c.Timeout, DefaultJobTimeout)
+}
+
+func (c JobsConfig) FetchPollIntervalDuration() (time.Duration, error) {
+	duration, err := optionalDuration(c.FetchPollInterval, DefaultJobFetchPollInterval)
+	if err != nil {
+		return 0, err
+	}
+	// River's default fetch cooldown is 100 ms, and its poll interval may not
+	// be shorter than that cooldown.
+	if duration < MinimumJobFetchPollInterval {
+		return 0, fmt.Errorf("must be at least %s", MinimumJobFetchPollInterval)
+	}
+	return duration, nil
 }
 
 type QueueConfig struct {
@@ -370,6 +386,9 @@ func (c *Config) Validate() error {
 	}
 	if _, err := c.Runtime.Jobs.TimeoutDuration(); err != nil {
 		return fmt.Errorf("runtime.jobs.timeout %w", err)
+	}
+	if _, err := c.Runtime.Jobs.FetchPollIntervalDuration(); err != nil {
+		return fmt.Errorf("runtime.jobs.fetch_poll_interval %w", err)
 	}
 	for name, queue := range c.Runtime.Jobs.Queues {
 		if queue.Concurrency < 1 {

@@ -27,6 +27,9 @@ runtime:
     # Total job deadline; TTS serially generates an episode, so keep this well above a single service timeout.
     # 整个 job 的总时限；TTS 会串行生成整集片段，因此应明显长于单次服务超时。
     timeout: 30m
+    # Fallback polling is only used when LISTEN/NOTIFY does not wake a queue; longer intervals reduce idle database queries.
+    # 兜底轮询只在 LISTEN/NOTIFY 未唤醒队列时使用；增大间隔可减少空闲数据库查询。
+    fetch_poll_interval: 30s
     # concurrency is the number of concurrent jobs for this queue per process, not the number of worker processes.
     # concurrency 是单个进程对该队列的并发 job 数，不是 worker 进程数。
     # run starts every queue by default; standalone workers select queues with --queues.
