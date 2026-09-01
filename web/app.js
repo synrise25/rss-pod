@@ -134,15 +134,17 @@ const elements = {
 
 applyLocale();
 
+const dateOptions = createDateOptions();
 const state = {
   sources: [],
   episodes: [],
-  dateOptions: createDateOptions(),
-  activeDate: dateKey(new Date()),
+  dateOptions,
+  activeDate: dateOptions[1]?.key || dateOptions[0].key,
   activeSource: "all",
   currentEpisodeID: null,
   speed: isDemoMode() ? 1.2 : readStoredNumber(SPEED_KEY, 1.2),
   pendingResume: isDemoMode() ? null : readResumeState(),
+  restoringResume: false,
 };
 
 updateGreeting();
@@ -166,7 +168,7 @@ async function loadPlayer() {
       .sort((a, b) => b.sortTime - a.sortTime);
 
     renderAll();
-    restoreLastEpisode();
+    selectInitialEpisode();
   } catch (error) {
     console.error("load player", error);
     setStatus(copy.loadError);
@@ -325,7 +327,20 @@ async function toggleEpisode(episode) {
 
 function selectEpisode(episode, { autoplay = false, resumeAt = 0 } = {}) {
   state.currentEpisodeID = episode.id;
+  state.restoringResume = resumeAt > 0;
   elements.audio.defaultPlaybackRate = state.speed;
+  if (resumeAt > 0) {
+    const resumeEpisodeID = episode.id;
+    elements.audio.addEventListener(
+      "loadedmetadata",
+      () => {
+        if (state.currentEpisodeID !== resumeEpisodeID) return;
+        elements.audio.currentTime = Math.min(resumeAt, Math.max(0, elements.audio.duration - 1));
+        state.restoringResume = false;
+      },
+      { once: true },
+    );
+  }
   elements.audio.src = episode.audioURL;
   elements.audio.load();
   applyPlaybackRate();
@@ -337,15 +352,6 @@ function selectEpisode(episode, { autoplay = false, resumeAt = 0 } = {}) {
   renderEpisodeList();
   scrollCurrentEpisodeIntoView();
 
-  if (resumeAt > 0) {
-    elements.audio.addEventListener(
-      "loadedmetadata",
-      () => {
-        elements.audio.currentTime = Math.min(resumeAt, Math.max(0, elements.audio.duration - 1));
-      },
-      { once: true },
-    );
-  }
   if (autoplay) safePlay();
 }
 
@@ -607,18 +613,22 @@ function setStatus(message) {
   elements.statusMessage.hidden = message === "";
 }
 
-function restoreLastEpisode() {
-  if (!state.pendingResume?.episodeID) return;
-  const episode = state.episodes.find((candidate) => candidate.id === state.pendingResume.episodeID);
+function selectInitialEpisode() {
+  const resumeEpisode = state.pendingResume?.episodeID
+    ? state.episodes.find((candidate) => candidate.id === state.pendingResume.episodeID)
+    : null;
+  const episode =
+    (resumeEpisode?.dayKey === state.activeDate && resumeEpisode) ||
+    state.episodes.find((candidate) => candidate.dayKey === state.activeDate);
   if (!episode) return;
-  state.activeDate = episode.dayKey || state.activeDate;
-  selectEpisode(episode, { resumeAt: state.pendingResume.currentTime || 0 });
-  renderAll();
+  selectEpisode(episode, {
+    resumeAt: episode === resumeEpisode ? state.pendingResume.currentTime || 0 : 0,
+  });
 }
 
 let lastPersistSecond = -1;
 function persistResumeState() {
-  if (isDemoMode() || !state.currentEpisodeID) return;
+  if (isDemoMode() || !state.currentEpisodeID || state.restoringResume) return;
   const wholeSecond = Math.floor(elements.audio.currentTime || 0);
   if (wholeSecond === lastPersistSecond || wholeSecond % 5 !== 0) return;
   lastPersistSecond = wholeSecond;
