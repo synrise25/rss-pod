@@ -84,9 +84,8 @@ services:
       api_token: env://CRAWL4AI_API_TOKEN
       proxy: env://CRAWL4AI_PROXY
       timeout: 45s
-      # The /md API currently returns Markdown; filter selects full (raw) or pruned (fit) Markdown.
-      # /md API 当前返回 Markdown；filter 用于选择完整（raw）或精简（fit）Markdown。
-      format: markdown
+      # Content is always Markdown; filter selects full (raw) or pruned (fit) Markdown.
+      # 内容固定返回 Markdown；filter 用于选择完整（raw）或精简（fit）Markdown。
       filter: fit
 
   llm:

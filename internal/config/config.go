@@ -156,20 +156,16 @@ type JinaService struct {
 	Format  string `yaml:"format"`
 }
 
+func (s JinaService) TimeoutDuration() (time.Duration, error) {
+	return optionalDuration(s.Timeout, 45*time.Second)
+}
+
 type Crawl4AIService struct {
 	BaseURL  string `yaml:"base_url"`
 	APIToken string `yaml:"api_token"`
 	Proxy    string `yaml:"proxy"`
 	Timeout  string `yaml:"timeout"`
-	Format   string `yaml:"format"`
 	Filter   string `yaml:"filter"`
-}
-
-func (s Crawl4AIService) EffectiveFormat() string {
-	if strings.TrimSpace(s.Format) == "" {
-		return "markdown"
-	}
-	return strings.ToLower(strings.TrimSpace(s.Format))
 }
 
 func (s Crawl4AIService) EffectiveFilter() string {
@@ -698,6 +694,12 @@ func validateContent(sourceID string, content ContentConfig, services ContentSer
 		if services.Jina.BaseURL == "" {
 			return fmt.Errorf("source %s uses jina but services.content.jina is not configured", sourceID)
 		}
+		if err := validateURL("services.content.jina.base_url", services.Jina.BaseURL); err != nil {
+			return err
+		}
+		if _, err := services.Jina.TimeoutDuration(); err != nil {
+			return fmt.Errorf("services.content.jina.timeout %w", err)
+		}
 		if content.URL.From != "item.link" {
 			return fmt.Errorf("source %s jina currently supports only url.from=item.link", sourceID)
 		}
@@ -711,9 +713,6 @@ func validateContent(sourceID string, content ContentConfig, services ContentSer
 		}
 		if _, err := service.TimeoutDuration(); err != nil {
 			return fmt.Errorf("services.content.crawl4ai.timeout %w", err)
-		}
-		if service.EffectiveFormat() != "markdown" {
-			return errors.New("services.content.crawl4ai.format must be markdown")
 		}
 		if filter := service.EffectiveFilter(); filter != "raw" && filter != "fit" {
 			return errors.New("services.content.crawl4ai.filter must be raw or fit")

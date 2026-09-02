@@ -42,7 +42,7 @@ func TestLoadCurrentConfig(t *testing.T) {
 	if cfg.Defaults.Content.Type != "rss-item" {
 		t.Fatalf("default content type = %q", cfg.Defaults.Content.Type)
 	}
-	if got := cfg.Services.Content.Crawl4AI; got.EffectiveFormat() != "markdown" || got.EffectiveFilter() != "fit" {
+	if got := cfg.Services.Content.Crawl4AI; got.EffectiveFilter() != "fit" {
 		t.Fatalf("Crawl4AI service = %#v", got)
 	}
 	zhihu, ok := cfg.Source("zhihu-topic")
@@ -129,9 +129,6 @@ func TestValidateOptionalProxy(t *testing.T) {
 
 func TestCrawl4AIServiceDefaults(t *testing.T) {
 	service := Crawl4AIService{}
-	if got := service.EffectiveFormat(); got != "markdown" {
-		t.Fatalf("EffectiveFormat() = %q, want markdown", got)
-	}
 	if got := service.EffectiveFilter(); got != "fit" {
 		t.Fatalf("EffectiveFilter() = %q, want fit", got)
 	}
@@ -142,7 +139,7 @@ func TestCrawl4AIServiceDefaults(t *testing.T) {
 
 func TestValidateCrawl4AIContent(t *testing.T) {
 	content := ContentConfig{Type: "crawl4ai", URL: URLMappingConfig{From: "item.link"}}
-	service := Crawl4AIService{BaseURL: "http://crawl4ai:11235", Timeout: "45s", Format: "markdown"}
+	service := Crawl4AIService{BaseURL: "http://crawl4ai:11235", Timeout: "45s"}
 	if err := validateContent("test", content, ContentServices{Crawl4AI: service}); err != nil {
 		t.Fatalf("valid Crawl4AI content rejected: %v", err)
 	}
@@ -155,7 +152,6 @@ func TestValidateCrawl4AIContent(t *testing.T) {
 		{name: "missing base URL", mutate: func(s *Crawl4AIService) { s.BaseURL = "" }, wantErr: "not configured"},
 		{name: "invalid base URL", mutate: func(s *Crawl4AIService) { s.BaseURL = "crawl4ai:11235" }, wantErr: "absolute URL"},
 		{name: "invalid timeout", mutate: func(s *Crawl4AIService) { s.Timeout = "never" }, wantErr: "timeout"},
-		{name: "unsupported format", mutate: func(s *Crawl4AIService) { s.Format = "html" }, wantErr: "format must be markdown"},
 		{name: "unsupported filter", mutate: func(s *Crawl4AIService) { s.Filter = "bm25" }, wantErr: "filter must be raw or fit"},
 	}
 	for _, test := range tests {
@@ -176,11 +172,23 @@ func TestValidateCrawl4AIContent(t *testing.T) {
 }
 
 func TestValidateJinaContentRequiresItemLink(t *testing.T) {
-	services := ContentServices{Jina: JinaService{BaseURL: "https://r.jina.ai"}}
+	services := ContentServices{Jina: JinaService{BaseURL: "https://r.jina.ai", Timeout: "45s"}}
 	content := ContentConfig{Type: "jina", URL: URLMappingConfig{From: "item.link"}}
 	if err := validateContent("test", content, services); err != nil {
 		t.Fatalf("valid Jina content rejected: %v", err)
 	}
+
+	invalidServices := services
+	invalidServices.Jina.BaseURL = "r.jina.ai"
+	if err := validateContent("test", content, invalidServices); err == nil || !strings.Contains(err.Error(), "absolute URL") {
+		t.Fatalf("validateContent() error = %v, want absolute URL validation error", err)
+	}
+	invalidServices = services
+	invalidServices.Jina.Timeout = "never"
+	if err := validateContent("test", content, invalidServices); err == nil || !strings.Contains(err.Error(), "timeout") {
+		t.Fatalf("validateContent() error = %v, want timeout validation error", err)
+	}
+
 	content.URL.From = "feed.url"
 	if err := validateContent("test", content, services); err == nil || !strings.Contains(err.Error(), "url.from=item.link") {
 		t.Fatalf("validateContent() error = %v, want item.link validation error", err)

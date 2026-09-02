@@ -35,7 +35,7 @@ func TestCheckCrawl4AI(t *testing.T) {
 
 	cfg := &config.Config{
 		Services: config.ServicesConfig{Content: config.ContentServices{Crawl4AI: config.Crawl4AIService{
-			BaseURL: server.URL, APIToken: "health-token", Format: "markdown",
+			BaseURL: server.URL, APIToken: "health-token",
 		}}},
 		Defaults: config.DefaultsConfig{Content: config.ContentConfig{Type: "crawl4ai"}},
 	}
@@ -43,7 +43,7 @@ func TestCheckCrawl4AI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if detail != "markdown/fit content OK via direct connection" {
+	if detail != "fit Markdown content OK via direct connection" {
 		t.Fatalf("detail = %q", detail)
 	}
 }
@@ -62,6 +62,22 @@ func TestCheckCrawl4AIRejectsMissingBaseURL(t *testing.T) {
 	cfg := &config.Config{Defaults: config.DefaultsConfig{Content: config.ContentConfig{Type: "crawl4ai"}}}
 	_, err := checkCrawl4AI(context.Background(), cfg)
 	if err == nil || err.Error() != "base_url is not configured" {
+		t.Fatalf("checkCrawl4AI() error = %v", err)
+	}
+}
+
+func TestCheckCrawl4AIReportsHTTPStatusBeforeDecoding(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte("not JSON"))
+	}))
+	defer server.Close()
+	cfg := &config.Config{
+		Services: config.ServicesConfig{Content: config.ContentServices{Crawl4AI: config.Crawl4AIService{BaseURL: server.URL}}},
+		Defaults: config.DefaultsConfig{Content: config.ContentConfig{Type: "crawl4ai"}},
+	}
+	_, err := checkCrawl4AI(context.Background(), cfg)
+	if err == nil || err.Error() != "HTTP 502" {
 		t.Fatalf("checkCrawl4AI() error = %v", err)
 	}
 }

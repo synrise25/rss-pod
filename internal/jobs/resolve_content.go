@@ -131,7 +131,7 @@ func (w *ResolveContentWorker) resolve(ctx context.Context, episodeID string) er
 
 func (w *ResolveContentWorker) fetchJina(ctx context.Context, targetURL string) (string, error) {
 	service := w.Config.Services.Content.Jina
-	timeout, err := time.ParseDuration(service.Timeout)
+	timeout, err := service.TimeoutDuration()
 	if err != nil {
 		return "", permanent("invalid Jina timeout: %v", err)
 	}

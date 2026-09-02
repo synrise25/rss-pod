@@ -225,7 +225,7 @@ func checkJina(ctx context.Context, cfg *config.Config) (string, error) {
 	}
 
 	jina := cfg.Services.Content.Jina
-	timeout, err := time.ParseDuration(jina.Timeout)
+	timeout, err := jina.TimeoutDuration()
 	if err != nil {
 		return "", fmt.Errorf("timeout: %w", err)
 	}
@@ -299,24 +299,23 @@ func checkCrawl4AI(ctx context.Context, cfg *config.Config) (string, error) {
 		return "", err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
 	var result struct {
 		Markdown string `json:"markdown"`
 		Success  bool   `json:"success"`
 	}
-	decodeErr := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result)
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
-	}
-	if decodeErr != nil {
-		return "", fmt.Errorf("response: %w", decodeErr)
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result); err != nil {
+		return "", fmt.Errorf("response: %w", err)
 	}
 	if !result.Success || !strings.Contains(strings.ToLower(result.Markdown), "example domain") {
 		return "", fmt.Errorf("response did not contain expected content")
 	}
 	if service.Proxy != "" {
-		return fmt.Sprintf("%s/%s content OK via configured proxy", service.EffectiveFormat(), service.EffectiveFilter()), nil
+		return service.EffectiveFilter() + " Markdown content OK via configured proxy", nil
 	}
-	return fmt.Sprintf("%s/%s content OK via direct connection", service.EffectiveFormat(), service.EffectiveFilter()), nil
+	return service.EffectiveFilter() + " Markdown content OK via direct connection", nil
 }
 
 func checkLLM(ctx context.Context, cfg *config.Config) (string, error) {
