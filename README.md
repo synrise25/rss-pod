@@ -183,6 +183,34 @@ GitHub Release with automatically generated release notes.
 Real credentials belong in environment variables or a secret manager. Never
 commit `.env` or a deployment-specific `config.yaml`.
 
+Crawl4AI supports `md` mode (the default, using `/md`) and `crawl` mode (using
+`/crawl`). `filter` selects `raw` or `fit` only in `md` mode; `crawl` mode
+requires a transform so unprocessed HTML is never sent directly to the LLM.
+`services.content.jina` and `services.content.crawl4ai` provide global defaults.
+A source may override any corresponding service field under
+`content.jina` or `content.crawl4ai`, including an explicit empty proxy. Keep
+credential overrides in `env://` references.
+
+V2EX topics can use `crawl` mode with the built-in `v2ex-topic` transform:
+
+```yaml
+content:
+  type: crawl4ai
+  url:
+    from: item.link
+  crawl4ai:
+    mode: crawl
+  transform:
+    type: v2ex-topic
+```
+
+The transform extracts the title, topic body, every paginated reply, and reply
+thanks visible in the page HTML, deduplicating everything into one Markdown
+Document without relying on the V2EX API. `max_documents_per_item` limits only
+Documents produced by derived RSS; it does not limit replies inside this
+Document. Source material is truncated at rss-pod's 120,000-character LLM
+prompt limit, with a warning log that excludes content and URLs.
+
 ## Security model
 
 The public listener serves only the player and read-only `/api/v1/player/*`

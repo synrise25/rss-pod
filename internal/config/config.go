@@ -165,7 +165,15 @@ type Crawl4AIService struct {
 	APIToken string `yaml:"api_token"`
 	Proxy    string `yaml:"proxy"`
 	Timeout  string `yaml:"timeout"`
+	Mode     string `yaml:"mode"`
 	Filter   string `yaml:"filter"`
+}
+
+func (s Crawl4AIService) EffectiveMode() string {
+	if strings.TrimSpace(s.Mode) == "" {
+		return "md"
+	}
+	return strings.ToLower(strings.TrimSpace(s.Mode))
 }
 
 func (s Crawl4AIService) EffectiveFilter() string {
@@ -308,8 +316,58 @@ func multiTalkerNames(voice string) []string {
 }
 
 type ContentConfig struct {
-	Type string           `yaml:"type"`
-	URL  URLMappingConfig `yaml:"url"`
+	Type      string                 `yaml:"type"`
+	URL       URLMappingConfig       `yaml:"url"`
+	Jina      JinaContentConfig      `yaml:"jina"`
+	Crawl4AI  Crawl4AIContentConfig  `yaml:"crawl4ai"`
+	Transform ContentTransformConfig `yaml:"transform"`
+}
+
+type JinaContentConfig struct {
+	BaseURL *string `yaml:"base_url"`
+	APIKey  *string `yaml:"api_key"`
+	Proxy   *string `yaml:"proxy"`
+	Timeout *string `yaml:"timeout"`
+	Format  *string `yaml:"format"`
+}
+
+func (c JinaContentConfig) EffectiveService(service JinaService) JinaService {
+	service.BaseURL = overrideString(service.BaseURL, c.BaseURL)
+	service.APIKey = overrideString(service.APIKey, c.APIKey)
+	service.Proxy = overrideString(service.Proxy, c.Proxy)
+	service.Timeout = overrideString(service.Timeout, c.Timeout)
+	service.Format = overrideString(service.Format, c.Format)
+	return service
+}
+
+type Crawl4AIContentConfig struct {
+	Mode     *string `yaml:"mode"`
+	BaseURL  *string `yaml:"base_url"`
+	APIToken *string `yaml:"api_token"`
+	Proxy    *string `yaml:"proxy"`
+	Timeout  *string `yaml:"timeout"`
+	Filter   *string `yaml:"filter"`
+}
+
+func (c Crawl4AIContentConfig) EffectiveService(service Crawl4AIService) Crawl4AIService {
+	service.BaseURL = overrideString(service.BaseURL, c.BaseURL)
+	service.APIToken = overrideString(service.APIToken, c.APIToken)
+	service.Proxy = overrideString(service.Proxy, c.Proxy)
+	service.Timeout = overrideString(service.Timeout, c.Timeout)
+	service.Mode = overrideString(service.Mode, c.Mode)
+	service.Filter = overrideString(service.Filter, c.Filter)
+	return service
+}
+
+func overrideString(fallback string, override *string) string {
+	if override == nil {
+		return fallback
+	}
+	return *override
+}
+
+type ContentTransformConfig struct {
+	Type string `yaml:"type"`
 }
 
 type URLMappingConfig struct {
@@ -690,40 +748,72 @@ func validateLoopbackListen(value string) error {
 func validateContent(sourceID string, content ContentConfig, services ContentServices) error {
 	switch content.Type {
 	case "rss-item":
+		if strings.TrimSpace(content.Transform.Type) != "" {
+			return fmt.Errorf("source %s content.transform is supported only by crawl4ai", sourceID)
+		}
 		return nil
 	case "jina":
-		baseURL := strings.TrimSpace(services.Jina.BaseURL)
+		service := content.Jina.EffectiveService(services.Jina)
+		field := "source " + sourceID + " content.jina"
+		baseURL := strings.TrimSpace(service.BaseURL)
 		if baseURL == "" {
-			return fmt.Errorf("source %s uses jina but services.content.jina is not configured", sourceID)
+			return fmt.Errorf("%s.base_url must not be empty", field)
 		}
-		if err := validateURL("services.content.jina.base_url", baseURL); err != nil {
+		if err := validateURL(field+".base_url", baseURL); err != nil {
 			return err
 		}
-		if _, err := services.Jina.TimeoutDuration(); err != nil {
-			return fmt.Errorf("services.content.jina.timeout %w", err)
+		if _, err := service.TimeoutDuration(); err != nil {
+			return fmt.Errorf("%s.timeout %w", field, err)
+		}
+		if err := validateOptionalProxy(field+".proxy", service.Proxy); err != nil {
+			return err
 		}
 		if content.URL.From != "item.link" {
 			return fmt.Errorf("source %s jina currently supports only url.from=item.link", sourceID)
 		}
+		if strings.TrimSpace(content.Transform.Type) != "" {
+			return fmt.Errorf("source %s content.transform is supported only by crawl4ai", sourceID)
+		}
 	case "crawl4ai":
-		service := services.Crawl4AI
+		service := content.Crawl4AI.EffectiveService(services.Crawl4AI)
+		field := "source " + sourceID + " content.crawl4ai"
 		baseURL := strings.TrimSpace(service.BaseURL)
 		if baseURL == "" {
-			return fmt.Errorf("source %s uses crawl4ai but services.content.crawl4ai is not configured", sourceID)
+			return fmt.Errorf("%s.base_url must not be empty", field)
 		}
-		if err := validateURL("services.content.crawl4ai.base_url", baseURL); err != nil {
+		if err := validateURL(field+".base_url", baseURL); err != nil {
 			return err
 		}
 		if _, err := service.TimeoutDuration(); err != nil {
-			return fmt.Errorf("services.content.crawl4ai.timeout %w", err)
+			return fmt.Errorf("%s.timeout %w", field, err)
+		}
+		mode := service.EffectiveMode()
+		if mode != "md" && mode != "crawl" {
+			return fmt.Errorf("source %s content.crawl4ai.mode must be md or crawl", sourceID)
 		}
 		if filter := service.EffectiveFilter(); filter != "raw" && filter != "fit" {
-			return errors.New("services.content.crawl4ai.filter must be raw or fit")
+			return fmt.Errorf("source %s content.crawl4ai.filter must be raw or fit", sourceID)
+		}
+		if err := validateOptionalProxy(field+".proxy", service.Proxy); err != nil {
+			return err
 		}
 		if content.URL.From != "item.link" {
 			return fmt.Errorf("source %s crawl4ai currently supports only url.from=item.link", sourceID)
 		}
+		transform := strings.ToLower(strings.TrimSpace(content.Transform.Type))
+		if transform != "" && transform != "v2ex-topic" {
+			return fmt.Errorf("source %s has unsupported content.transform.type %q", sourceID, content.Transform.Type)
+		}
+		if mode == "crawl" && transform == "" {
+			return fmt.Errorf("source %s content.crawl4ai.mode=crawl requires content.transform.type", sourceID)
+		}
+		if transform == "v2ex-topic" && mode != "crawl" {
+			return fmt.Errorf("source %s content.transform.type v2ex-topic requires content.crawl4ai.mode=crawl", sourceID)
+		}
 	case "derived-rss":
+		if strings.TrimSpace(content.Transform.Type) != "" {
+			return fmt.Errorf("source %s content.transform is supported only by crawl4ai", sourceID)
+		}
 		if content.URL.Regex == "" || content.URL.Template == "" {
 			return fmt.Errorf("source %s derived-rss requires url.regex and url.template", sourceID)
 		}

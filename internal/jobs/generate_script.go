@@ -78,7 +78,17 @@ func (w *GenerateScriptWorker) generate(ctx context.Context, episodeID string) e
 	if err != nil {
 		return permanent("render prompt: %v", err)
 	}
-	userPrompt := renderDocuments(documents)
+	userPrompt, promptStats := renderDocuments(documents)
+	if promptStats.Truncated {
+		slog.WarnContext(ctx, "truncated documents for LLM prompt",
+			"episode_id", episodeID,
+			"source_id", sourceID,
+			"document_count", len(documents),
+			"included_documents", promptStats.IncludedDocuments,
+			"input_runes", promptStats.InputRunes,
+			"limit_runes", promptStats.LimitRunes,
+		)
+	}
 
 	var script generatedScript
 	var raw []byte
@@ -230,22 +240,63 @@ turns 必须按实际播放顺序排列。`, exampleSpeakerID)
 	return prompt, nil
 }
 
-func renderDocuments(documents []llmDocument) string {
+type renderDocumentsStats struct {
+	Truncated         bool
+	IncludedDocuments int
+	InputRunes        int
+	LimitRunes        int
+}
+
+func renderDocuments(documents []llmDocument) (string, renderDocumentsStats) {
 	const maxRunes = 120_000
 	var builder strings.Builder
+	stats := renderDocumentsStats{LimitRunes: maxRunes}
 	for _, document := range documents {
-		section := fmt.Sprintf("\n\n## 资料 %d\n标题：%s\n来源：%s\n\n%s", document.Position+1, document.Title, document.SourceURL, document.Content)
-		remaining := maxRunes - utf8.RuneCountInString(builder.String())
+		header := fmt.Sprintf("\n\n## 资料 %d\n标题：%s\n来源：%s\n\n", document.Position+1, document.Title, document.SourceURL)
+		stats.InputRunes += utf8.RuneCountInString(header) + utf8.RuneCountInString(document.Content)
+	}
+	writtenRunes := 0
+	for _, document := range documents {
+		remaining := maxRunes - writtenRunes
 		if remaining <= 0 {
+			stats.Truncated = true
 			break
 		}
-		runes := []rune(section)
-		if len(runes) > remaining {
-			runes = runes[:remaining]
+		stats.IncludedDocuments++
+		header := fmt.Sprintf("\n\n## 资料 %d\n标题：%s\n来源：%s\n\n", document.Position+1, document.Title, document.SourceURL)
+		written, truncated := writeRunes(&builder, header, remaining)
+		writtenRunes += written
+		if truncated {
+			stats.Truncated = true
+			break
 		}
-		builder.WriteString(string(runes))
+		written, truncated = writeRunes(&builder, document.Content, maxRunes-writtenRunes)
+		writtenRunes += written
+		if truncated {
+			stats.Truncated = true
+			break
+		}
 	}
-	return strings.TrimSpace(builder.String())
+	return strings.TrimSpace(builder.String()), stats
+}
+
+func writeRunes(builder *strings.Builder, value string, limit int) (int, bool) {
+	count := utf8.RuneCountInString(value)
+	if count <= limit {
+		builder.WriteString(value)
+		return count, false
+	}
+	end := len(value)
+	runes := 0
+	for index := range value {
+		if runes == limit {
+			end = index
+			break
+		}
+		runes++
+	}
+	builder.WriteString(value[:end])
+	return limit, true
 }
 
 func callLLM(ctx context.Context, service config.LLMService, systemPrompt, userPrompt string, speakers []config.SpeakerConfig) (generatedScript, []byte, bool, error) {
