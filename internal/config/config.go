@@ -715,6 +715,9 @@ func validateContent(sourceID string, content ContentConfig, services ContentSer
 		if filter := service.EffectiveFilter(); filter != "raw" && filter != "fit" {
 			return errors.New("services.content.crawl4ai.filter must be raw or fit")
 		}
+		if content.URL.From != "item.link" {
+			return fmt.Errorf("source %s crawl4ai currently supports only url.from=item.link", sourceID)
+		}
 	case "derived-rss":
 		if content.URL.Regex == "" || content.URL.Template == "" {
 			return fmt.Errorf("source %s derived-rss requires url.regex and url.template", sourceID)

@@ -168,6 +168,11 @@ func TestValidateCrawl4AIContent(t *testing.T) {
 			}
 		})
 	}
+
+	content.URL.From = "feed.url"
+	if err := validateContent("test", content, ContentServices{Crawl4AI: service}); err == nil || !strings.Contains(err.Error(), "url.from=item.link") {
+		t.Fatalf("validateContent() error = %v, want item.link validation error", err)
+	}
 }
 
 func TestLoadRejectsUnknownTTSService(t *testing.T) {
