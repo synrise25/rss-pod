@@ -81,3 +81,16 @@ func TestCheckCrawl4AIReportsHTTPStatusBeforeDecoding(t *testing.T) {
 		t.Fatalf("checkCrawl4AI() error = %v", err)
 	}
 }
+
+func TestCheckCrawl4AIRejectsInvalidProxy(t *testing.T) {
+	cfg := &config.Config{
+		Services: config.ServicesConfig{Content: config.ContentServices{Crawl4AI: config.Crawl4AIService{
+			BaseURL: "http://crawl4ai:11235", Proxy: "not-a-url",
+		}}},
+		Defaults: config.DefaultsConfig{Content: config.ContentConfig{Type: "crawl4ai"}},
+	}
+	_, err := checkCrawl4AI(context.Background(), cfg)
+	if err == nil || err.Error() != `invalid proxy URL "not-a-url"` {
+		t.Fatalf("checkCrawl4AI() error = %v", err)
+	}
+}

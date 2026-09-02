@@ -237,7 +237,11 @@ func checkJina(ctx context.Context, cfg *config.Config) (string, error) {
 	if jina.APIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+jina.APIKey)
 	}
-	resp, err := newHTTPClient(jina.Proxy, timeout).Do(req)
+	client, err := newContentHTTPClient(jina.Proxy, timeout)
+	if err != nil {
+		return "", err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -294,7 +298,11 @@ func checkCrawl4AI(ctx context.Context, cfg *config.Config) (string, error) {
 	if service.APIToken != "" {
 		req.Header.Set("Authorization", "Bearer "+service.APIToken)
 	}
-	resp, err := newHTTPClient(service.Proxy, timeout).Do(req)
+	client, err := newContentHTTPClient(service.Proxy, timeout)
+	if err != nil {
+		return "", err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -515,6 +523,16 @@ func newHTTPClient(proxy string, timeout time.Duration) *http.Client {
 		}
 	}
 	return &http.Client{Transport: transport, Timeout: timeout}
+}
+
+func newContentHTTPClient(proxy string, timeout time.Duration) (*http.Client, error) {
+	if proxy != "" {
+		proxyURL, err := url.Parse(proxy)
+		if err != nil || proxyURL.Scheme == "" || proxyURL.Host == "" {
+			return nil, fmt.Errorf("invalid proxy URL %q", proxy)
+		}
+	}
+	return newHTTPClient(proxy, timeout), nil
 }
 
 func transportWithoutEnvironmentProxy() *http.Transport {
