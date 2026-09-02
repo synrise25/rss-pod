@@ -213,18 +213,33 @@ func checkRSS(ctx context.Context, cfg *config.Config) (string, error) {
 }
 
 func checkJina(ctx context.Context, cfg *config.Config) (string, error) {
-	used := false
+	services := make(map[config.JinaService]struct{})
+	if cfg.Defaults.Content.Type == "jina" {
+		services[cfg.Defaults.Content.Jina.EffectiveService(cfg.Services.Content.Jina)] = struct{}{}
+	}
 	for _, source := range cfg.Sources {
 		if source.Content != nil && source.Content.Type == "jina" {
-			used = true
-			break
+			services[source.Content.Jina.EffectiveService(cfg.Services.Content.Jina)] = struct{}{}
 		}
 	}
-	if !used && cfg.Defaults.Content.Type != "jina" {
+	if len(services) == 0 {
 		return "not used", nil
 	}
+	var detail string
+	for service := range services {
+		var err error
+		detail, err = checkJinaService(ctx, service)
+		if err != nil {
+			return "", err
+		}
+	}
+	if len(services) > 1 {
+		return fmt.Sprintf("%d configurations OK", len(services)), nil
+	}
+	return detail, nil
+}
 
-	jina := cfg.Services.Content.Jina
+func checkJinaService(ctx context.Context, jina config.JinaService) (string, error) {
 	baseURL := strings.TrimSpace(jina.BaseURL)
 	if baseURL == "" {
 		return "", fmt.Errorf("base_url is not configured")
@@ -267,18 +282,39 @@ func checkJina(ctx context.Context, cfg *config.Config) (string, error) {
 }
 
 func checkCrawl4AI(ctx context.Context, cfg *config.Config) (string, error) {
-	used := false
+	type crawlCheck struct {
+		Service config.Crawl4AIService
+		Mode    string
+	}
+	checks := make(map[crawlCheck]struct{})
+	if cfg.Defaults.Content.Type == "crawl4ai" {
+		service := cfg.Defaults.Content.Crawl4AI.EffectiveService(cfg.Services.Content.Crawl4AI)
+		checks[crawlCheck{Service: service, Mode: service.EffectiveMode()}] = struct{}{}
+	}
 	for _, source := range cfg.Sources {
 		if source.Content != nil && source.Content.Type == "crawl4ai" {
-			used = true
-			break
+			service := source.Content.Crawl4AI.EffectiveService(cfg.Services.Content.Crawl4AI)
+			checks[crawlCheck{Service: service, Mode: service.EffectiveMode()}] = struct{}{}
 		}
 	}
-	if !used && cfg.Defaults.Content.Type != "crawl4ai" {
+	if len(checks) == 0 {
 		return "not used", nil
 	}
+	var detail string
+	for check := range checks {
+		var err error
+		detail, err = checkCrawl4AIService(ctx, check.Service, check.Mode)
+		if err != nil {
+			return "", err
+		}
+	}
+	if len(checks) > 1 {
+		return fmt.Sprintf("%d configurations OK", len(checks)), nil
+	}
+	return detail, nil
+}
 
-	service := cfg.Services.Content.Crawl4AI
+func checkCrawl4AIService(ctx context.Context, service config.Crawl4AIService, mode string) (string, error) {
 	baseURL := strings.TrimSpace(service.BaseURL)
 	if baseURL == "" {
 		return "", fmt.Errorf("base_url is not configured")
@@ -287,14 +323,24 @@ func checkCrawl4AI(ctx context.Context, cfg *config.Config) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("timeout: %w", err)
 	}
-	payload, err := json.Marshal(struct {
-		URL    string `json:"url"`
-		Filter string `json:"f"`
-	}{URL: "https://example.com", Filter: service.EffectiveFilter()})
+	var path string
+	var payload []byte
+	if mode == "crawl" {
+		path = "/crawl"
+		payload, err = json.Marshal(struct {
+			URLs []string `json:"urls"`
+		}{URLs: []string{"https://example.com"}})
+	} else {
+		path = "/md"
+		payload, err = json.Marshal(struct {
+			URL    string `json:"url"`
+			Filter string `json:"f"`
+		}{URL: "https://example.com", Filter: service.EffectiveFilter()})
+	}
 	if err != nil {
 		return "", err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(baseURL, "/")+"/md", bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(baseURL, "/")+path, bytes.NewReader(payload))
 	if err != nil {
 		return "", err
 	}
@@ -315,20 +361,40 @@ func checkCrawl4AI(ctx context.Context, cfg *config.Config) (string, error) {
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-	var result struct {
-		Markdown string `json:"markdown"`
-		Success  bool   `json:"success"`
+	if mode == "crawl" {
+		var result struct {
+			Success bool `json:"success"`
+			Results []struct {
+				Success bool   `json:"success"`
+				HTML    string `json:"html"`
+			} `json:"results"`
+		}
+		if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result); err != nil {
+			return "", fmt.Errorf("response: %w", err)
+		}
+		if !result.Success || len(result.Results) != 1 || !result.Results[0].Success || !strings.Contains(strings.ToLower(result.Results[0].HTML), "example domain") {
+			return "", fmt.Errorf("response did not contain expected content")
+		}
+	} else {
+		var result struct {
+			Markdown string `json:"markdown"`
+			Success  bool   `json:"success"`
+		}
+		if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result); err != nil {
+			return "", fmt.Errorf("response: %w", err)
+		}
+		if !result.Success || !strings.Contains(strings.ToLower(result.Markdown), "example domain") {
+			return "", fmt.Errorf("response did not contain expected content")
+		}
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result); err != nil {
-		return "", fmt.Errorf("response: %w", err)
-	}
-	if !result.Success || !strings.Contains(strings.ToLower(result.Markdown), "example domain") {
-		return "", fmt.Errorf("response did not contain expected content")
+	content := service.EffectiveFilter() + " Markdown content"
+	if mode == "crawl" {
+		content = "HTML content"
 	}
 	if strings.TrimSpace(service.Proxy) != "" {
-		return service.EffectiveFilter() + " Markdown content OK via configured proxy", nil
+		return content + " OK via configured proxy", nil
 	}
-	return service.EffectiveFilter() + " Markdown content OK via direct connection", nil
+	return content + " OK via direct connection", nil
 }
 
 func checkLLM(ctx context.Context, cfg *config.Config) (string, error) {

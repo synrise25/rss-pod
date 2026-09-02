@@ -78,7 +78,17 @@ func (w *GenerateScriptWorker) generate(ctx context.Context, episodeID string) e
 	if err != nil {
 		return permanent("render prompt: %v", err)
 	}
-	userPrompt := renderDocuments(documents)
+	userPrompt, promptStats := renderDocuments(documents)
+	if promptStats.Truncated {
+		slog.WarnContext(ctx, "truncated documents for LLM prompt",
+			"episode_id", episodeID,
+			"source_id", sourceID,
+			"document_count", len(documents),
+			"included_documents", promptStats.IncludedDocuments,
+			"input_runes", promptStats.InputRunes,
+			"limit_runes", promptStats.LimitRunes,
+		)
+	}
 
 	var script generatedScript
 	var raw []byte
@@ -230,22 +240,43 @@ turns 必须按实际播放顺序排列。`, exampleSpeakerID)
 	return prompt, nil
 }
 
-func renderDocuments(documents []llmDocument) string {
+type renderDocumentsStats struct {
+	Truncated         bool
+	IncludedDocuments int
+	InputRunes        int
+	LimitRunes        int
+}
+
+func renderDocuments(documents []llmDocument) (string, renderDocumentsStats) {
 	const maxRunes = 120_000
 	var builder strings.Builder
+	stats := renderDocumentsStats{LimitRunes: maxRunes}
+	sections := make([]string, 0, len(documents))
 	for _, document := range documents {
 		section := fmt.Sprintf("\n\n## 资料 %d\n标题：%s\n来源：%s\n\n%s", document.Position+1, document.Title, document.SourceURL, document.Content)
-		remaining := maxRunes - utf8.RuneCountInString(builder.String())
+		sections = append(sections, section)
+		stats.InputRunes += utf8.RuneCountInString(section)
+	}
+	writtenRunes := 0
+	for _, section := range sections {
+		remaining := maxRunes - writtenRunes
 		if remaining <= 0 {
+			stats.Truncated = true
 			break
 		}
 		runes := []rune(section)
 		if len(runes) > remaining {
 			runes = runes[:remaining]
+			stats.Truncated = true
 		}
 		builder.WriteString(string(runes))
+		writtenRunes += len(runes)
+		stats.IncludedDocuments++
+		if stats.Truncated {
+			break
+		}
 	}
-	return strings.TrimSpace(builder.String())
+	return strings.TrimSpace(builder.String()), stats
 }
 
 func callLLM(ctx context.Context, service config.LLMService, systemPrompt, userPrompt string, speakers []config.SpeakerConfig) (generatedScript, []byte, bool, error) {

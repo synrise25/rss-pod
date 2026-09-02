@@ -167,6 +167,31 @@ ghcr.io/synrise25/rss-pod
 真实凭据只应通过环境变量或 secret manager 注入。不要提交 `.env` 或真实部署使用的
 `config.yaml`。
 
+Crawl4AI 支持 `md`（默认，调用 `/md`）和 `crawl`（调用 `/crawl`）两种模式。`filter`
+只在 `md` 模式下选择 `raw` 或 `fit`；`crawl` 模式必须配置一个 transform，避免未处理的
+HTML 被直接送入 LLM。
+`services.content.jina` 与 `services.content.crawl4ai` 提供全局默认值；source 可以在
+`content.jina` 或 `content.crawl4ai` 下覆盖对应 service 的任意字段，包括显式使用空字符串
+关闭全局代理。建议凭据覆盖仍通过 `env://` 注入。
+
+V2EX 主题可以使用 `crawl` 模式和内置的 `v2ex-topic` transform：
+
+```yaml
+content:
+  type: crawl4ai
+  url:
+    from: item.link
+  crawl4ai:
+    mode: crawl
+  transform:
+    type: v2ex-topic
+```
+
+该 transform 从网页 HTML 提取标题、原帖、全部分页回复及页面上可见的回复感谢数，去重后
+合并为一个 Markdown Document，不依赖 V2EX API。`max_documents_per_item` 只限制派生 RSS
+生成的 Document 数量，不限制这个 Document 内的回复数。送入 LLM 的资料达到应用层
+120,000 字符上限时会截断，并输出一条不含正文和 URL 的 warning 日志。
+
 ## 安全边界
 
 公共 listener 只提供播放器和只读 `/api/v1/player/*` 路由。健康检查、手动拉取、重试、

@@ -18,7 +18,7 @@ func TestLoadCurrentConfig(t *testing.T) {
 	t.Setenv("PUBLIC_MEDIA_BASE_URL", "http://127.0.0.1:9000/rsspod-media")
 	t.Setenv("JINA_API_KEY", "")
 	t.Setenv("JINA_PROXY", "")
-	t.Setenv("CRAWL4AI_BASE_URL", "")
+	t.Setenv("CRAWL4AI_BASE_URL", "http://127.0.0.1:11235")
 	t.Setenv("CRAWL4AI_API_TOKEN", "")
 	t.Setenv("CRAWL4AI_PROXY", "")
 	t.Setenv("LLM_DEEPSEEK_BASE_URL", "http://127.0.0.1:8080/v1")
@@ -42,7 +42,7 @@ func TestLoadCurrentConfig(t *testing.T) {
 	if cfg.Defaults.Content.Type != "rss-item" {
 		t.Fatalf("default content type = %q", cfg.Defaults.Content.Type)
 	}
-	if got := cfg.Services.Content.Crawl4AI; got.EffectiveFilter() != "fit" {
+	if got := cfg.Services.Content.Crawl4AI; got.EffectiveMode() != "md" || got.EffectiveFilter() != "fit" {
 		t.Fatalf("Crawl4AI service = %#v", got)
 	}
 	zhihu, ok := cfg.Source("zhihu-topic")
@@ -71,7 +71,10 @@ func TestLoadCurrentConfig(t *testing.T) {
 	if got := cfg.Services.TTS[AzureTTSServiceName]; got.AzureEndpoint() != "https://southeastasia.tts.speech.microsoft.com/cognitiveservices/v1" || got.OutputFormat != "audio-24khz-48kbitrate-mono-mp3" {
 		t.Fatalf("azure TTS service = %#v", got)
 	}
-	if got := cfg.EffectiveLimits(v2ex).MaxDocumentsPerItem; got != 300 {
+	if v2ex.Content == nil || v2ex.Content.Crawl4AI.EffectiveService(cfg.Services.Content.Crawl4AI).EffectiveMode() != "crawl" || v2ex.Content.Transform.Type != "v2ex-topic" {
+		t.Fatalf("v2ex content = %#v", v2ex.Content)
+	}
+	if got := cfg.EffectiveLimits(v2ex).MaxDocumentsPerItem; got != 20 {
 		t.Fatalf("effective max documents = %d", got)
 	}
 	if got := cfg.EffectivePodcast(v2ex).MaxAge; got != "72h" {
@@ -129,6 +132,9 @@ func TestValidateOptionalProxy(t *testing.T) {
 
 func TestCrawl4AIServiceDefaults(t *testing.T) {
 	service := Crawl4AIService{}
+	if got := service.EffectiveMode(); got != "md" {
+		t.Fatalf("EffectiveMode() = %q, want md", got)
+	}
 	if got := service.EffectiveFilter(); got != "fit" {
 		t.Fatalf("EffectiveFilter() = %q, want fit", got)
 	}
@@ -169,6 +175,62 @@ func TestValidateCrawl4AIContent(t *testing.T) {
 	content.URL.From = "feed.url"
 	if err := validateContent("test", content, ContentServices{Crawl4AI: service}); err == nil || !strings.Contains(err.Error(), "url.from=item.link") {
 		t.Fatalf("validateContent() error = %v, want item.link validation error", err)
+	}
+}
+
+func TestContentServiceOverrides(t *testing.T) {
+	text := func(value string) *string { return &value }
+
+	jina := JinaContentConfig{
+		BaseURL: text("https://source-jina.example.com"),
+		APIKey:  text("source-key"),
+		Proxy:   text(""),
+		Timeout: text("10s"),
+		Format:  text("html"),
+	}.EffectiveService(JinaService{
+		BaseURL: "https://global-jina.example.com", APIKey: "global-key", Proxy: "http://proxy.example.com", Timeout: "45s", Format: "markdown",
+	})
+	if jina.BaseURL != "https://source-jina.example.com" || jina.APIKey != "source-key" || jina.Proxy != "" || jina.Timeout != "10s" || jina.Format != "html" {
+		t.Fatalf("Jina overrides = %#v", jina)
+	}
+
+	crawl4ai := Crawl4AIContentConfig{
+		Mode: text("crawl"), Filter: text("raw"), Proxy: text(""),
+	}.EffectiveService(Crawl4AIService{
+		BaseURL: "https://crawl.example.com", APIToken: "token", Proxy: "http://proxy.example.com", Timeout: "45s", Mode: "md", Filter: "fit",
+	})
+	if crawl4ai.BaseURL != "https://crawl.example.com" || crawl4ai.APIToken != "token" || crawl4ai.Proxy != "" || crawl4ai.Timeout != "45s" || crawl4ai.EffectiveMode() != "crawl" || crawl4ai.EffectiveFilter() != "raw" {
+		t.Fatalf("Crawl4AI overrides = %#v", crawl4ai)
+	}
+}
+
+func TestValidateV2EXCrawlTransform(t *testing.T) {
+	text := func(value string) *string { return &value }
+	services := ContentServices{Crawl4AI: Crawl4AIService{BaseURL: "https://crawl.example.com"}}
+	content := ContentConfig{
+		Type:      "crawl4ai",
+		URL:       URLMappingConfig{From: "item.link"},
+		Crawl4AI:  Crawl4AIContentConfig{Mode: text("crawl")},
+		Transform: ContentTransformConfig{Type: "v2ex-topic"},
+	}
+	if err := validateContent("v2ex", content, services); err != nil {
+		t.Fatalf("valid V2EX transform rejected: %v", err)
+	}
+
+	content.Crawl4AI.Mode = text("md")
+	if err := validateContent("v2ex", content, services); err == nil || !strings.Contains(err.Error(), "requires content.crawl4ai.mode=crawl") {
+		t.Fatalf("validateContent() error = %v, want mode requirement", err)
+	}
+
+	content.Crawl4AI.Mode = text("browser")
+	if err := validateContent("v2ex", content, services); err == nil || !strings.Contains(err.Error(), "mode must be md or crawl") {
+		t.Fatalf("validateContent() error = %v, want supported mode validation", err)
+	}
+
+	content.Crawl4AI.Mode = text("crawl")
+	content.Transform.Type = ""
+	if err := validateContent("v2ex", content, services); err == nil || !strings.Contains(err.Error(), "requires content.transform.type") {
+		t.Fatalf("validateContent() error = %v, want transform requirement", err)
 	}
 }
 

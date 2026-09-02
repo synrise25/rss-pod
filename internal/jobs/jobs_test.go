@@ -134,7 +134,7 @@ func TestFetchCrawl4AI(t *testing.T) {
 					BaseURL: "  " + server.URL + "  ", APIToken: "test-token", Filter: test.filter,
 				}},
 			}}}
-			got, err := worker.fetchCrawl4AI(context.Background(), "https://example.com/article")
+			got, err := worker.fetchCrawl4AI(context.Background(), "https://example.com/article", config.ContentConfig{Type: "crawl4ai"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -142,6 +142,128 @@ func TestFetchCrawl4AI(t *testing.T) {
 				t.Fatalf("fetchCrawl4AI() = %q", got)
 			}
 		})
+	}
+}
+
+func TestFetchCrawl4AIUsesSourceServiceOverrides(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/md" {
+			t.Errorf("request = %s %s, want POST /md", r.Method, r.URL.Path)
+		}
+		var request struct {
+			URL    string `json:"url"`
+			Filter string `json:"f"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		if request.URL != "https://example.com/article" || request.Filter != "raw" {
+			t.Errorf("request = %#v", request)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"markdown":"# Source override"}`))
+	}))
+	defer server.Close()
+
+	filter := "raw"
+	baseURL := server.URL
+	worker := ResolveContentWorker{Config: &config.Config{Services: config.ServicesConfig{
+		Content: config.ContentServices{Crawl4AI: config.Crawl4AIService{BaseURL: "https://unused.example.com", Filter: "fit"}},
+	}}}
+	content := config.ContentConfig{
+		Type: "crawl4ai",
+		Crawl4AI: config.Crawl4AIContentConfig{
+			BaseURL: &baseURL, Filter: &filter,
+		},
+	}
+	got, err := worker.fetchCrawl4AI(context.Background(), "https://example.com/article", content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "# Source override" {
+		t.Fatalf("fetchCrawl4AI() = %q", got)
+	}
+}
+
+func TestFetchV2EXTopicIncludesAllPagesAndReplyThanks(t *testing.T) {
+	const page1 = `<!doctype html><html><body>
+<h1>一个 V2EX 主题</h1>
+<div class="topic_content"><p>原帖第一段</p><p>原帖第二段</p></div>
+<a href="?p=1">1</a><a href="?p=2">2</a>
+<div id="r_101" class="cell"><a href="/member/alice">alice</a><span class="no">#1</span><div class="reply_content">第一条回复</div><span><img src="/static/img/heart_20250818.png"> 7</span></div>
+<div id="r_102" class="cell"><a href="/member/bob">bob</a><span class="no">#2</span><div class="reply_content">第二条回复</div></div>
+</body></html>`
+	const page2 = `<!doctype html><html><body>
+<h1>一个 V2EX 主题</h1>
+<div id="r_102" class="cell"><a href="/member/bob">bob</a><span class="no">#2</span><div class="reply_content">重复回复</div></div>
+<div id="r_103" class="cell"><a href="/member/carol">carol</a><span class="no">#3</span><div class="reply_content">第三条回复</div><span><img alt="❤️"> 2</span></div>
+</body></html>`
+
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.URL.Path != "/crawl" {
+			t.Errorf("path = %q, want /crawl", r.URL.Path)
+		}
+		var request struct {
+			URLs []string `json:"urls"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		var html string
+		switch requests {
+		case 1:
+			if len(request.URLs) != 1 || request.URLs[0] != "https://www.v2ex.com/t/12345?p=1" {
+				t.Errorf("first URLs = %#v", request.URLs)
+			}
+			html = page1
+		case 2:
+			if len(request.URLs) != 1 || request.URLs[0] != "https://www.v2ex.com/t/12345?p=2" {
+				t.Errorf("second URLs = %#v", request.URLs)
+			}
+			html = page2
+		default:
+			t.Errorf("unexpected request %d", requests)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"results": []map[string]any{{"url": request.URLs[0], "success": true, "html": html, "markdown": map[string]string{}}},
+		})
+	}))
+	defer server.Close()
+
+	mode := "crawl"
+	worker := ResolveContentWorker{Config: &config.Config{Services: config.ServicesConfig{
+		Content: config.ContentServices{Crawl4AI: config.Crawl4AIService{BaseURL: server.URL}},
+	}}}
+	content := config.ContentConfig{
+		Type:      "crawl4ai",
+		Crawl4AI:  config.Crawl4AIContentConfig{Mode: &mode},
+		Transform: config.ContentTransformConfig{Type: "v2ex-topic"},
+	}
+	got, err := worker.fetchCrawl4AI(context.Background(), "https://www.v2ex.com/t/12345?p=2#reply3", content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"# 一个 V2EX 主题", "原帖第一段\n原帖第二段", "## 回复（共 3 条）", "### #1 · alice · 感谢 7", "第一条回复", "### #2 · bob", "第二条回复", "### #3 · carol · 感谢 2", "第三条回复"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("content missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "重复回复") || strings.Contains(got, "bob · 感谢") {
+		t.Errorf("content retained duplicate or invented thanks:\n%s", got)
+	}
+	if requests != 2 {
+		t.Fatalf("request count = %d, want 2", requests)
+	}
+}
+
+func TestV2EXTransformRejectsNonV2EXURL(t *testing.T) {
+	_, _, err := normalizeV2EXTopicURL("https://example.com/t/123")
+	if err == nil || !strings.Contains(err.Error(), "not v2ex.com") {
+		t.Fatalf("normalizeV2EXTopicURL() error = %v", err)
 	}
 }
 
@@ -162,7 +284,7 @@ func TestFetchCrawl4AIErrorClassification(t *testing.T) {
 			worker := ResolveContentWorker{Config: &config.Config{Services: config.ServicesConfig{
 				Content: config.ContentServices{Crawl4AI: config.Crawl4AIService{BaseURL: server.URL}},
 			}}}
-			_, err := worker.fetchCrawl4AI(context.Background(), "https://example.com")
+			_, err := worker.fetchCrawl4AI(context.Background(), "https://example.com", config.ContentConfig{Type: "crawl4ai"})
 			if err == nil {
 				t.Fatal("fetchCrawl4AI() unexpectedly succeeded")
 			}
@@ -176,7 +298,7 @@ func TestFetchCrawl4AIErrorClassification(t *testing.T) {
 
 func TestFetchCrawl4AIRejectsMissingBaseURL(t *testing.T) {
 	worker := ResolveContentWorker{Config: &config.Config{}}
-	_, err := worker.fetchCrawl4AI(context.Background(), "https://example.com")
+	_, err := worker.fetchCrawl4AI(context.Background(), "https://example.com", config.ContentConfig{Type: "crawl4ai"})
 	if err == nil || !strings.Contains(err.Error(), "base_url is not configured") {
 		t.Fatalf("fetchCrawl4AI() error = %v", err)
 	}
@@ -188,7 +310,7 @@ func TestFetchCrawl4AIRejectsMissingBaseURL(t *testing.T) {
 
 func TestFetchJinaRejectsMissingBaseURL(t *testing.T) {
 	worker := ResolveContentWorker{Config: &config.Config{}}
-	_, err := worker.fetchJina(context.Background(), "https://example.com")
+	_, err := worker.fetchJina(context.Background(), "https://example.com", config.ContentConfig{Type: "jina"})
 	if err == nil || !strings.Contains(err.Error(), "base_url is not configured") {
 		t.Fatalf("fetchJina() error = %v", err)
 	}
@@ -204,7 +326,7 @@ func TestFetchCrawl4AIRejectsInvalidProxyAsPermanent(t *testing.T) {
 			BaseURL: "http://crawl4ai:11235", Proxy: "not-a-url",
 		}},
 	}}}
-	_, err := worker.fetchCrawl4AI(context.Background(), "https://example.com")
+	_, err := worker.fetchCrawl4AI(context.Background(), "https://example.com", config.ContentConfig{Type: "crawl4ai"})
 	if err == nil || !strings.Contains(err.Error(), "invalid Crawl4AI proxy") {
 		t.Fatalf("fetchCrawl4AI() error = %v", err)
 	}
@@ -326,6 +448,17 @@ func TestHTMLToText(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("htmlToText() = %q, missing %q", got, want)
 		}
+	}
+}
+
+func TestRenderDocumentsReportsTruncation(t *testing.T) {
+	documents := []llmDocument{{Position: 0, Title: "长文", SourceURL: "https://example.com", Content: strings.Repeat("字", 120_001)}}
+	content, stats := renderDocuments(documents)
+	if !stats.Truncated || stats.IncludedDocuments != 1 || stats.InputRunes <= stats.LimitRunes {
+		t.Fatalf("stats = %#v", stats)
+	}
+	if got := len([]rune(content)); got > stats.LimitRunes {
+		t.Fatalf("rendered runes = %d, limit = %d", got, stats.LimitRunes)
 	}
 }
 

@@ -48,6 +48,41 @@ func TestCheckCrawl4AI(t *testing.T) {
 	}
 }
 
+func TestCheckCrawl4AICrawlModeWithSourceOverride(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/crawl" {
+			t.Errorf("request = %s %s, want POST /crawl", r.Method, r.URL.Path)
+		}
+		var request struct {
+			URLs []string `json:"urls"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		if len(request.URLs) != 1 || request.URLs[0] != "https://example.com" {
+			t.Errorf("request body = %#v", request)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"results":[{"success":true,"html":"<h1>Example Domain</h1>"}]}`))
+	}))
+	defer server.Close()
+
+	mode := "crawl"
+	baseURL := server.URL
+	content := &config.ContentConfig{
+		Type:     "crawl4ai",
+		Crawl4AI: config.Crawl4AIContentConfig{Mode: &mode, BaseURL: &baseURL},
+	}
+	cfg := &config.Config{Sources: []config.SourceConfig{{Content: content}}}
+	detail, err := checkCrawl4AI(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail != "HTML content OK via direct connection" {
+		t.Fatalf("detail = %q", detail)
+	}
+}
+
 func TestCheckCrawl4AINotUsed(t *testing.T) {
 	detail, err := checkCrawl4AI(context.Background(), &config.Config{})
 	if err != nil {

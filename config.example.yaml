@@ -71,6 +71,8 @@ runtime:
 services:
   # Jina and Crawl4AI content strategies require external service settings.
   # Jina 和 Crawl4AI 内容策略需要外部服务参数。
+  # A source may override any field below under content.jina or content.crawl4ai; omitted fields inherit these defaults.
+  # source 可在 content.jina 或 content.crawl4ai 下覆盖以下任意字段；未填写的字段继承这里的默认值。
   content:
     jina:
       base_url: https://r.jina.ai
@@ -84,8 +86,11 @@ services:
       api_token: env://CRAWL4AI_API_TOKEN
       proxy: env://CRAWL4AI_PROXY
       timeout: 45s
-      # Content is always Markdown; filter selects full (raw) or pruned (fit) Markdown.
-      # 内容固定返回 Markdown；filter 用于选择完整（raw）或精简（fit）Markdown。
+      # md calls /md directly; crawl calls /crawl and requires a source transform. Defaults to md.
+      # md 直接调用 /md；crawl 调用 /crawl，并要求 source 配置 transform。默认为 md。
+      mode: md
+      # In md mode, filter selects full (raw) or pruned (fit) Markdown.
+      # 在 md 模式下，filter 用于选择完整（raw）或精简（fit）Markdown。
       filter: fit
 
   llm:
@@ -214,8 +219,8 @@ defaults:
   # - derived-rss：从入口 item 推导另一个 RSS，并将其 items 作为 Documents。
   # - jina: resolve the derived URL through services.content.jina.
   # - jina：将推导出的 URL 交给 services.content.jina 读取。
-  # - crawl4ai: resolve the derived URL through services.content.crawl4ai; its filter defaults to fit.
-  # - crawl4ai：将推导出的 URL 交给 services.content.crawl4ai 读取；filter 默认为 fit。
+  # - crawl4ai: resolve the item URL through services.content.crawl4ai; mode defaults to md and filter to fit.
+  # - crawl4ai：将 item URL 交给 services.content.crawl4ai 读取；mode 默认为 md，filter 默认为 fit。
   content:
     type: rss-item
 
@@ -252,9 +257,17 @@ sources:
       cron: "50 23 * * *"
 
     content:
-      type: jina
+      type: crawl4ai
       url:
         from: item.link
+      # Every field from services.content.crawl4ai may be overridden here; omitted fields inherit the service default.
+      # 这里可以覆盖 services.content.crawl4ai 的任意字段；未填写的字段继承 service 默认值。
+      crawl4ai:
+        mode: crawl
+      # Crawl raw HTML, follow every V2EX topic page, and emit one clean Markdown document.
+      # 读取 crawl 的原始 HTML，遍历 V2EX 主题全部分页，并输出一个干净的 Markdown Document。
+      transform:
+        type: v2ex-topic
 
     generation:
       target_duration: 3m
@@ -263,9 +276,6 @@ sources:
     llm:
       - deepseek
       - gemini
-
-    limits:
-      max_documents_per_item: 300
 
   - id: zhihu-topic
     name: 知乎话题
