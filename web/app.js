@@ -13,6 +13,7 @@ const copy = {
     lang: "en",
     documentTitle: "Commute Podcasts",
     languageLabel: "Language",
+    githubLabel: "View project on GitHub",
     dateTabsLabel: "Choose a date",
     sourceSectionLabel: "Filter by source",
     sourceFilterLabel: "Feeds",
@@ -47,6 +48,7 @@ const copy = {
     lang: "zh-CN",
     documentTitle: "通勤播客",
     languageLabel: "语言",
+    githubLabel: "在 GitHub 上查看项目",
     dateTabsLabel: "选择日期",
     sourceSectionLabel: "按来源筛选",
     sourceFilterLabel: "内容来源",
@@ -112,6 +114,7 @@ const elements = {
   greeting: document.querySelector("#greeting"),
   languageSwitcher: document.querySelector("#language-switcher"),
   languageLinks: [...document.querySelectorAll("[data-locale]")],
+  githubLink: document.querySelector("#github-link"),
   dateTabs: document.querySelector("#date-tabs"),
   sourceFilterSection: document.querySelector("#source-filter-section"),
   sourceFilterLabel: document.querySelector("#source-filter-label"),
@@ -538,6 +541,8 @@ function applyLocale() {
   document.documentElement.lang = copy.lang;
   document.title = copy.documentTitle;
   elements.languageSwitcher.setAttribute("aria-label", copy.languageLabel);
+  elements.githubLink.setAttribute("aria-label", copy.githubLabel);
+  elements.githubLink.title = copy.githubLabel;
   elements.dateTabs.setAttribute("aria-label", copy.dateTabsLabel);
   elements.sourceFilterSection.setAttribute("aria-label", copy.sourceSectionLabel);
   elements.sourceFilterLabel.textContent = copy.sourceFilterLabel;

@@ -61,6 +61,9 @@ func TestPlayerWebHandlerServesEnglishRoute(t *testing.T) {
 		if !strings.Contains(response.Body.String(), "Commute Podcasts") {
 			t.Fatalf("%s: embedded index does not contain the player title", path)
 		}
+		if !strings.Contains(response.Body.String(), `href="https://github.com/synrise25/rss-pod"`) {
+			t.Fatalf("%s: embedded index does not contain the GitHub repository link", path)
+		}
 		if language := response.Header().Get("Content-Language"); language != "en" {
 			t.Fatalf("%s: Content-Language = %q, want en", path, language)
 		}
@@ -114,5 +117,23 @@ func TestPlayerWebHandlerServesAppIcon(t *testing.T) {
 	}
 	if response.Body.Len() == 0 {
 		t.Fatal("embedded favicon is empty")
+	}
+}
+
+func TestPlayerWebHandlerServesGitHubIcon(t *testing.T) {
+	t.Parallel()
+
+	request := httptest.NewRequest(http.MethodGet, "/icons/github.svg", nil)
+	response := httptest.NewRecorder()
+	playerWebHandler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", response.Code)
+	}
+	if contentType := response.Header().Get("Content-Type"); contentType != "image/svg+xml" {
+		t.Fatalf("Content-Type = %q, want image/svg+xml", contentType)
+	}
+	if response.Body.Len() == 0 {
+		t.Fatal("embedded GitHub icon is empty")
 	}
 }
