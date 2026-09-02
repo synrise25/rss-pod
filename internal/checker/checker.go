@@ -42,6 +42,7 @@ func Run(ctx context.Context, cfg *config.Config) []Result {
 		{name: "public-media", fn: checkPublicMedia},
 		{name: "rss", fn: checkRSS},
 		{name: "jina", fn: checkJina},
+		{name: "crawl4ai", fn: checkCrawl4AI},
 		{name: "llm", fn: checkLLM},
 		{name: "tts", fn: checkTTS},
 	}
@@ -224,11 +225,15 @@ func checkJina(ctx context.Context, cfg *config.Config) (string, error) {
 	}
 
 	jina := cfg.Services.Content.Jina
-	timeout, err := time.ParseDuration(jina.Timeout)
+	baseURL := strings.TrimSpace(jina.BaseURL)
+	if baseURL == "" {
+		return "", fmt.Errorf("base_url is not configured")
+	}
+	timeout, err := jina.TimeoutDuration()
 	if err != nil {
 		return "", fmt.Errorf("timeout: %w", err)
 	}
-	requestURL := strings.TrimRight(jina.BaseURL, "/") + "/http://example.com"
+	requestURL := strings.TrimRight(baseURL, "/") + "/http://example.com"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 	if err != nil {
 		return "", err
@@ -236,7 +241,11 @@ func checkJina(ctx context.Context, cfg *config.Config) (string, error) {
 	if jina.APIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+jina.APIKey)
 	}
-	resp, err := newHTTPClient(jina.Proxy, timeout).Do(req)
+	client, err := newContentHTTPClient(jina.Proxy, timeout)
+	if err != nil {
+		return "", err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -251,10 +260,75 @@ func checkJina(ctx context.Context, cfg *config.Config) (string, error) {
 	if !bytes.Contains(bytes.ToLower(body), []byte("example domain")) {
 		return "", fmt.Errorf("response did not contain expected content")
 	}
-	if jina.Proxy != "" {
+	if strings.TrimSpace(jina.Proxy) != "" {
 		return "content OK via configured proxy", nil
 	}
 	return "content OK via direct connection", nil
+}
+
+func checkCrawl4AI(ctx context.Context, cfg *config.Config) (string, error) {
+	used := false
+	for _, source := range cfg.Sources {
+		if source.Content != nil && source.Content.Type == "crawl4ai" {
+			used = true
+			break
+		}
+	}
+	if !used && cfg.Defaults.Content.Type != "crawl4ai" {
+		return "not used", nil
+	}
+
+	service := cfg.Services.Content.Crawl4AI
+	baseURL := strings.TrimSpace(service.BaseURL)
+	if baseURL == "" {
+		return "", fmt.Errorf("base_url is not configured")
+	}
+	timeout, err := service.TimeoutDuration()
+	if err != nil {
+		return "", fmt.Errorf("timeout: %w", err)
+	}
+	payload, err := json.Marshal(struct {
+		URL    string `json:"url"`
+		Filter string `json:"f"`
+	}{URL: "https://example.com", Filter: service.EffectiveFilter()})
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(baseURL, "/")+"/md", bytes.NewReader(payload))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	if service.APIToken != "" {
+		req.Header.Set("Authorization", "Bearer "+service.APIToken)
+	}
+	client, err := newContentHTTPClient(service.Proxy, timeout)
+	if err != nil {
+		return "", err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	var result struct {
+		Markdown string `json:"markdown"`
+		Success  bool   `json:"success"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result); err != nil {
+		return "", fmt.Errorf("response: %w", err)
+	}
+	if !result.Success || !strings.Contains(strings.ToLower(result.Markdown), "example domain") {
+		return "", fmt.Errorf("response did not contain expected content")
+	}
+	if strings.TrimSpace(service.Proxy) != "" {
+		return service.EffectiveFilter() + " Markdown content OK via configured proxy", nil
+	}
+	return service.EffectiveFilter() + " Markdown content OK via direct connection", nil
 }
 
 func checkLLM(ctx context.Context, cfg *config.Config) (string, error) {
@@ -454,6 +528,17 @@ func newHTTPClient(proxy string, timeout time.Duration) *http.Client {
 		}
 	}
 	return &http.Client{Transport: transport, Timeout: timeout}
+}
+
+func newContentHTTPClient(proxy string, timeout time.Duration) (*http.Client, error) {
+	proxy = strings.TrimSpace(proxy)
+	if proxy != "" {
+		proxyURL, err := url.Parse(proxy)
+		if err != nil || proxyURL.Scheme == "" || proxyURL.Host == "" {
+			return nil, fmt.Errorf("invalid proxy URL %q", proxy)
+		}
+	}
+	return newHTTPClient(proxy, timeout), nil
 }
 
 func transportWithoutEnvironmentProxy() *http.Transport {

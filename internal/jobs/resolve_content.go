@@ -3,6 +3,7 @@ package jobs
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"html"
 	"io"
@@ -80,6 +81,12 @@ func (w *ResolveContentWorker) resolve(ctx context.Context, episodeID string) er
 		if err == nil {
 			documents = []resolvedDocument{{Title: title, SourceURL: link, Content: content}}
 		}
+	case "crawl4ai":
+		var content string
+		content, err = w.fetchCrawl4AI(ctx, link)
+		if err == nil {
+			documents = []resolvedDocument{{Title: title, SourceURL: link, Content: content}}
+		}
 	case "derived-rss":
 		documents, err = w.fetchDerivedRSS(ctx, source, contentConfig, link)
 	default:
@@ -124,7 +131,11 @@ func (w *ResolveContentWorker) resolve(ctx context.Context, episodeID string) er
 
 func (w *ResolveContentWorker) fetchJina(ctx context.Context, targetURL string) (string, error) {
 	service := w.Config.Services.Content.Jina
-	timeout, err := time.ParseDuration(service.Timeout)
+	baseURL := strings.TrimSpace(service.BaseURL)
+	if baseURL == "" {
+		return "", permanent("Jina base_url is not configured")
+	}
+	timeout, err := service.TimeoutDuration()
 	if err != nil {
 		return "", permanent("invalid Jina timeout: %v", err)
 	}
@@ -132,7 +143,7 @@ func (w *ResolveContentWorker) fetchJina(ctx context.Context, targetURL string) 
 	if err != nil {
 		return "", permanent("invalid Jina proxy: %v", err)
 	}
-	requestURL := strings.TrimRight(service.BaseURL, "/") + "/" + targetURL
+	requestURL := strings.TrimRight(baseURL, "/") + "/" + targetURL
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 	if err != nil {
 		return "", permanent("create Jina request: %v", err)
@@ -162,6 +173,68 @@ func (w *ResolveContentWorker) fetchJina(ctx context.Context, targetURL string) 
 		return "", fmt.Errorf("Jina returned empty content")
 	}
 	return string(body), nil
+}
+
+func (w *ResolveContentWorker) fetchCrawl4AI(ctx context.Context, targetURL string) (string, error) {
+	service := w.Config.Services.Content.Crawl4AI
+	baseURL := strings.TrimSpace(service.BaseURL)
+	if baseURL == "" {
+		return "", permanent("Crawl4AI base_url is not configured")
+	}
+	timeout, err := service.TimeoutDuration()
+	if err != nil {
+		return "", permanent("invalid Crawl4AI timeout: %v", err)
+	}
+	client, err := contentHTTPClient(service.Proxy, timeout)
+	if err != nil {
+		return "", permanent("invalid Crawl4AI proxy: %v", err)
+	}
+	payload, err := json.Marshal(struct {
+		URL    string `json:"url"`
+		Filter string `json:"f"`
+	}{URL: targetURL, Filter: service.EffectiveFilter()})
+	if err != nil {
+		return "", permanent("encode Crawl4AI request: %v", err)
+	}
+	requestURL := strings.TrimRight(baseURL, "/") + "/md"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, bytes.NewReader(payload))
+	if err != nil {
+		return "", permanent("create Crawl4AI request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	if service.APIToken != "" {
+		req.Header.Set("Authorization", "Bearer "+service.APIToken)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("Crawl4AI request: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if err != nil {
+		return "", fmt.Errorf("read Crawl4AI response: %w", err)
+	}
+	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+		return "", fmt.Errorf("Crawl4AI returned HTTP %d", resp.StatusCode)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", permanent("Crawl4AI returned HTTP %d", resp.StatusCode)
+	}
+	var result struct {
+		Markdown string `json:"markdown"`
+		Success  bool   `json:"success"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", permanent("decode Crawl4AI response: %v", err)
+	}
+	if !result.Success {
+		return "", fmt.Errorf("Crawl4AI reported an unsuccessful crawl")
+	}
+	if strings.TrimSpace(result.Markdown) == "" {
+		return "", fmt.Errorf("Crawl4AI returned empty content")
+	}
+	return result.Markdown, nil
 }
 
 func (w *ResolveContentWorker) fetchDerivedRSS(ctx context.Context, source config.SourceConfig, contentConfig config.ContentConfig, itemLink string) ([]resolvedDocument, error) {
@@ -220,10 +293,11 @@ func (w *ResolveContentWorker) fetchDerivedRSS(ctx context.Context, source confi
 func contentHTTPClient(proxy string, timeout time.Duration) (*http.Client, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil
+	proxy = strings.TrimSpace(proxy)
 	if proxy != "" {
 		proxyURL, err := url.Parse(proxy)
-		if err != nil {
-			return nil, err
+		if err != nil || proxyURL.Scheme == "" || proxyURL.Host == "" {
+			return nil, fmt.Errorf("invalid proxy URL %q", proxy)
 		}
 		transport.Proxy = http.ProxyURL(proxyURL)
 	}

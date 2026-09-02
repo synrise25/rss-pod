@@ -69,8 +69,8 @@ runtime:
 # Service configuration describes external connections only; built-in content strategies are not registered here.
 # 服务配置只描述外部连接；内置内容策略不在这里重复注册。
 services:
-  # Currently only the Jina content strategy needs external service settings.
-  # 目前只有 Jina 内容策略需要外部服务参数。
+  # Jina and Crawl4AI content strategies require external service settings.
+  # Jina 和 Crawl4AI 内容策略需要外部服务参数。
   content:
     jina:
       base_url: https://r.jina.ai
@@ -78,6 +78,15 @@ services:
       proxy: env://JINA_PROXY
       timeout: 45s
       format: markdown
+
+    crawl4ai:
+      base_url: env://CRAWL4AI_BASE_URL
+      api_token: env://CRAWL4AI_API_TOKEN
+      proxy: env://CRAWL4AI_PROXY
+      timeout: 45s
+      # Content is always Markdown; filter selects full (raw) or pruned (fit) Markdown.
+      # 内容固定返回 Markdown；filter 用于选择完整（raw）或精简（fit）Markdown。
+      filter: fit
 
   llm:
     deepseek:
@@ -197,14 +206,16 @@ defaults:
     prompt_template: prompts/default-dialogue.tmpl
     dialogue_profile: general-dialogue
 
-  # type must be rss-item, derived-rss, or jina:
-  # type 只能是 rss-item、derived-rss 或 jina：
+  # type must be rss-item, derived-rss, jina, or crawl4ai:
+  # type 只能是 rss-item、derived-rss、jina 或 crawl4ai：
   # - rss-item: use the entry item's content or description.
   # - rss-item：直接使用入口 RSS item 的 content/description。
   # - derived-rss: derive another feed and use its items as Documents.
   # - derived-rss：从入口 item 推导另一个 RSS，并将其 items 作为 Documents。
   # - jina: resolve the derived URL through services.content.jina.
   # - jina：将推导出的 URL 交给 services.content.jina 读取。
+  # - crawl4ai: resolve the derived URL through services.content.crawl4ai; its filter defaults to fit.
+  # - crawl4ai：将推导出的 URL 交给 services.content.crawl4ai 读取；filter 默认为 fit。
   content:
     type: rss-item
 

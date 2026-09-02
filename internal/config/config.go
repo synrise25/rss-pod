@@ -144,7 +144,8 @@ type ServicesConfig struct {
 }
 
 type ContentServices struct {
-	Jina JinaService `yaml:"jina"`
+	Jina     JinaService     `yaml:"jina"`
+	Crawl4AI Crawl4AIService `yaml:"crawl4ai"`
 }
 
 type JinaService struct {
@@ -153,6 +154,29 @@ type JinaService struct {
 	Proxy   string `yaml:"proxy"`
 	Timeout string `yaml:"timeout"`
 	Format  string `yaml:"format"`
+}
+
+func (s JinaService) TimeoutDuration() (time.Duration, error) {
+	return optionalDuration(s.Timeout, 45*time.Second)
+}
+
+type Crawl4AIService struct {
+	BaseURL  string `yaml:"base_url"`
+	APIToken string `yaml:"api_token"`
+	Proxy    string `yaml:"proxy"`
+	Timeout  string `yaml:"timeout"`
+	Filter   string `yaml:"filter"`
+}
+
+func (s Crawl4AIService) EffectiveFilter() string {
+	if strings.TrimSpace(s.Filter) == "" {
+		return "fit"
+	}
+	return strings.ToLower(strings.TrimSpace(s.Filter))
+}
+
+func (s Crawl4AIService) TimeoutDuration() (time.Duration, error) {
+	return optionalDuration(s.Timeout, 45*time.Second)
 }
 
 type LLMService struct {
@@ -436,6 +460,9 @@ func (c *Config) Validate() error {
 	if err := validateOptionalProxy("services.content.jina.proxy", c.Services.Content.Jina.Proxy); err != nil {
 		return err
 	}
+	if err := validateOptionalProxy("services.content.crawl4ai.proxy", c.Services.Content.Crawl4AI.Proxy); err != nil {
+		return err
+	}
 	for name, service := range c.Services.LLM {
 		if err := validateOptionalProxy("services.llm "+name+" proxy", service.Proxy); err != nil {
 			return err
@@ -463,7 +490,7 @@ func (c *Config) Validate() error {
 		if source.Content != nil {
 			content = *source.Content
 		}
-		if err := validateContent(source.ID, content, c.Services.Content.Jina); err != nil {
+		if err := validateContent(source.ID, content, c.Services.Content); err != nil {
 			return err
 		}
 		if len(source.LLM) > 0 {
@@ -630,7 +657,8 @@ func validateMultiTalkerProfile(voices []SpeakerVoice) error {
 }
 
 func validateOptionalProxy(field, value string) error {
-	if strings.TrimSpace(value) == "" {
+	value = strings.TrimSpace(value)
+	if value == "" {
 		return nil
 	}
 	u, err := url.Parse(value)
@@ -659,13 +687,41 @@ func validateLoopbackListen(value string) error {
 	return nil
 }
 
-func validateContent(sourceID string, content ContentConfig, jina JinaService) error {
+func validateContent(sourceID string, content ContentConfig, services ContentServices) error {
 	switch content.Type {
 	case "rss-item":
 		return nil
 	case "jina":
-		if jina.BaseURL == "" {
+		baseURL := strings.TrimSpace(services.Jina.BaseURL)
+		if baseURL == "" {
 			return fmt.Errorf("source %s uses jina but services.content.jina is not configured", sourceID)
+		}
+		if err := validateURL("services.content.jina.base_url", baseURL); err != nil {
+			return err
+		}
+		if _, err := services.Jina.TimeoutDuration(); err != nil {
+			return fmt.Errorf("services.content.jina.timeout %w", err)
+		}
+		if content.URL.From != "item.link" {
+			return fmt.Errorf("source %s jina currently supports only url.from=item.link", sourceID)
+		}
+	case "crawl4ai":
+		service := services.Crawl4AI
+		baseURL := strings.TrimSpace(service.BaseURL)
+		if baseURL == "" {
+			return fmt.Errorf("source %s uses crawl4ai but services.content.crawl4ai is not configured", sourceID)
+		}
+		if err := validateURL("services.content.crawl4ai.base_url", baseURL); err != nil {
+			return err
+		}
+		if _, err := service.TimeoutDuration(); err != nil {
+			return fmt.Errorf("services.content.crawl4ai.timeout %w", err)
+		}
+		if filter := service.EffectiveFilter(); filter != "raw" && filter != "fit" {
+			return errors.New("services.content.crawl4ai.filter must be raw or fit")
+		}
+		if content.URL.From != "item.link" {
+			return fmt.Errorf("source %s crawl4ai currently supports only url.from=item.link", sourceID)
 		}
 	case "derived-rss":
 		if content.URL.Regex == "" || content.URL.Template == "" {

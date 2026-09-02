@@ -50,7 +50,7 @@ set of choices. That narrower focus led to rss-pod.
 
 ## Highlights
 
-- RSS, derived RSS, and Jina-backed content expansion
+- RSS, derived RSS, Jina-backed, and Crawl4AI-backed content expansion
 - OpenAI-compatible LLM providers with ordered fallback
 - Reusable two-speaker dialogue profiles and strict script validation
 - Edge TTS, Azure Speech, and Azure MultiTalker support
