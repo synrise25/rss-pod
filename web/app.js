@@ -139,7 +139,7 @@ const state = {
   sources: [],
   episodes: [],
   dateOptions,
-  activeDate: dateOptions[1]?.key || dateOptions[0].key,
+  activeDate: dateOptions[0].key,
   activeSource: "all",
   currentEpisodeID: null,
   speed: isDemoMode() ? 1.2 : readStoredNumber(SPEED_KEY, 1.2),
@@ -167,7 +167,6 @@ async function loadPlayer() {
       .filter((episode) => episode.id && episode.audioURL)
       .sort((a, b) => b.sortTime - a.sortTime);
 
-    renderAll();
     selectInitialEpisode();
   } catch (error) {
     console.error("load player", error);
@@ -614,13 +613,20 @@ function setStatus(message) {
 }
 
 function selectInitialEpisode() {
+  const availableDateKeys = new Set(state.dateOptions.map((option) => option.key));
+  const latestEpisode = state.episodes.find((candidate) => availableDateKeys.has(candidate.dayKey));
+  if (!latestEpisode) {
+    renderAll();
+    return;
+  }
+
+  state.activeDate = latestEpisode.dayKey;
   const resumeEpisode = state.pendingResume?.episodeID
     ? state.episodes.find((candidate) => candidate.id === state.pendingResume.episodeID)
     : null;
-  const episode =
-    (resumeEpisode?.dayKey === state.activeDate && resumeEpisode) ||
-    state.episodes.find((candidate) => candidate.dayKey === state.activeDate);
-  if (!episode) return;
+  const episode = resumeEpisode?.dayKey === latestEpisode.dayKey ? resumeEpisode : latestEpisode;
+  renderDateTabs();
+  renderSourceFilters();
   selectEpisode(episode, {
     resumeAt: episode === resumeEpisode ? state.pendingResume.currentTime || 0 : 0,
   });
