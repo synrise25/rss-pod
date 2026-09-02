@@ -127,7 +127,7 @@ func parseV2EXPage(document string, topicURL *url.URL) (v2exPage, error) {
 			page.Content = nodeText(node)
 		}
 		if node.Type == htmlnode.ElementNode && node.Data == "a" {
-			if pageNumber := v2exPageNumber(node, topicURL.Path); pageNumber > page.PageCount {
+			if pageNumber := v2exPageNumber(node, topicURL); pageNumber > page.PageCount {
 				page.PageCount = pageNumber
 			}
 		}
@@ -224,13 +224,16 @@ func renderV2EXTopic(title, content string, replies []v2exReply) string {
 	return strings.TrimSpace(builder.String())
 }
 
-func v2exPageNumber(node *htmlnode.Node, topicPath string) int {
+func v2exPageNumber(node *htmlnode.Node, topicURL *url.URL) int {
+	if !hasClass(node, "page_normal") && !hasClass(node, "page_current") {
+		return 0
+	}
 	href := strings.TrimSpace(attribute(node, "href"))
 	if href == "" {
 		return 0
 	}
 	link, err := url.Parse(href)
-	if err != nil || (link.Path != "" && strings.TrimRight(link.Path, "/") != strings.TrimRight(topicPath, "/")) {
+	if err != nil || link.IsAbs() || link.Host != "" || (link.Path != "" && strings.TrimRight(link.Path, "/") != strings.TrimRight(topicURL.Path, "/")) {
 		return 0
 	}
 	page, err := strconv.Atoi(link.Query().Get("p"))

@@ -23,7 +23,8 @@ type crawl4AIResult struct {
 func (w *ResolveContentWorker) fetchCrawl4AI(ctx context.Context, targetURL string, contentConfig config.ContentConfig) (string, error) {
 	service := contentConfig.Crawl4AI.EffectiveService(w.Config.Services.Content.Crawl4AI)
 	filter := service.EffectiveFilter()
-	switch service.EffectiveMode() {
+	mode := service.EffectiveMode()
+	switch mode {
 	case "md":
 		return w.fetchCrawl4AIMarkdown(ctx, targetURL, filter, service)
 	case "crawl":
@@ -32,7 +33,7 @@ func (w *ResolveContentWorker) fetchCrawl4AI(ctx context.Context, targetURL stri
 		}
 		return "", permanent("Crawl4AI crawl mode requires a supported content transform")
 	default:
-		return "", permanent("unsupported Crawl4AI mode %q", service.Mode)
+		return "", permanent("unsupported Crawl4AI mode %q", mode)
 	}
 }
 

@@ -189,9 +189,9 @@ func TestFetchV2EXTopicIncludesAllPagesAndReplyThanks(t *testing.T) {
 	const page1 = `<!doctype html><html><body>
 <h1>一个 V2EX 主题</h1>
 <div class="topic_content"><p>原帖第一段</p><p>原帖第二段</p></div>
-<a href="?p=1">1</a><a href="?p=2">2</a>
+<a href="?p=1" class="page_current">1</a><a href="?p=2" class="page_normal">2</a>
 <div id="r_101" class="cell"><a href="/member/alice">alice</a><span class="no">#1</span><div class="reply_content">第一条回复</div><span><img src="/static/img/heart_20250818.png"> 7</span></div>
-<div id="r_102" class="cell"><a href="/member/bob">bob</a><span class="no">#2</span><div class="reply_content">第二条回复</div></div>
+<div id="r_102" class="cell"><a href="/member/bob">bob</a><span class="no">#2</span><div class="reply_content">第二条回复 <a href="https://www.v2ex.com/t/12345?p=100">用户链接</a></div></div>
 </body></html>`
 	const page2 = `<!doctype html><html><body>
 <h1>一个 V2EX 主题</h1>
