@@ -251,32 +251,52 @@ func renderDocuments(documents []llmDocument) (string, renderDocumentsStats) {
 	const maxRunes = 120_000
 	var builder strings.Builder
 	stats := renderDocumentsStats{LimitRunes: maxRunes}
-	sections := make([]string, 0, len(documents))
 	for _, document := range documents {
-		section := fmt.Sprintf("\n\n## 资料 %d\n标题：%s\n来源：%s\n\n%s", document.Position+1, document.Title, document.SourceURL, document.Content)
-		sections = append(sections, section)
-		stats.InputRunes += utf8.RuneCountInString(section)
+		header := fmt.Sprintf("\n\n## 资料 %d\n标题：%s\n来源：%s\n\n", document.Position+1, document.Title, document.SourceURL)
+		stats.InputRunes += utf8.RuneCountInString(header) + utf8.RuneCountInString(document.Content)
 	}
 	writtenRunes := 0
-	for _, section := range sections {
+	for _, document := range documents {
 		remaining := maxRunes - writtenRunes
 		if remaining <= 0 {
 			stats.Truncated = true
 			break
 		}
-		runes := []rune(section)
-		if len(runes) > remaining {
-			runes = runes[:remaining]
-			stats.Truncated = true
-		}
-		builder.WriteString(string(runes))
-		writtenRunes += len(runes)
 		stats.IncludedDocuments++
-		if stats.Truncated {
+		header := fmt.Sprintf("\n\n## 资料 %d\n标题：%s\n来源：%s\n\n", document.Position+1, document.Title, document.SourceURL)
+		written, truncated := writeRunes(&builder, header, remaining)
+		writtenRunes += written
+		if truncated {
+			stats.Truncated = true
+			break
+		}
+		written, truncated = writeRunes(&builder, document.Content, maxRunes-writtenRunes)
+		writtenRunes += written
+		if truncated {
+			stats.Truncated = true
 			break
 		}
 	}
 	return strings.TrimSpace(builder.String()), stats
+}
+
+func writeRunes(builder *strings.Builder, value string, limit int) (int, bool) {
+	count := utf8.RuneCountInString(value)
+	if count <= limit {
+		builder.WriteString(value)
+		return count, false
+	}
+	end := len(value)
+	runes := 0
+	for index := range value {
+		if runes == limit {
+			end = index
+			break
+		}
+		runes++
+	}
+	builder.WriteString(value[:end])
+	return limit, true
 }
 
 func callLLM(ctx context.Context, service config.LLMService, systemPrompt, userPrompt string, speakers []config.SpeakerConfig) (generatedScript, []byte, bool, error) {

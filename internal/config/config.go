@@ -757,7 +757,7 @@ func validateContent(sourceID string, content ContentConfig, services ContentSer
 		field := "source " + sourceID + " content.jina"
 		baseURL := strings.TrimSpace(service.BaseURL)
 		if baseURL == "" {
-			return fmt.Errorf("source %s uses jina but services.content.jina is not configured", sourceID)
+			return fmt.Errorf("%s.base_url must not be empty", field)
 		}
 		if err := validateURL(field+".base_url", baseURL); err != nil {
 			return err
@@ -779,7 +779,7 @@ func validateContent(sourceID string, content ContentConfig, services ContentSer
 		field := "source " + sourceID + " content.crawl4ai"
 		baseURL := strings.TrimSpace(service.BaseURL)
 		if baseURL == "" {
-			return fmt.Errorf("source %s uses crawl4ai but services.content.crawl4ai is not configured", sourceID)
+			return fmt.Errorf("%s.base_url must not be empty", field)
 		}
 		if err := validateURL(field+".base_url", baseURL); err != nil {
 			return err

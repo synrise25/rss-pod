@@ -155,8 +155,8 @@ func TestValidateCrawl4AIContent(t *testing.T) {
 		mutate  func(*Crawl4AIService)
 		wantErr string
 	}{
-		{name: "missing base URL", mutate: func(s *Crawl4AIService) { s.BaseURL = "" }, wantErr: "not configured"},
-		{name: "whitespace base URL", mutate: func(s *Crawl4AIService) { s.BaseURL = "   " }, wantErr: "not configured"},
+		{name: "missing base URL", mutate: func(s *Crawl4AIService) { s.BaseURL = "" }, wantErr: "base_url must not be empty"},
+		{name: "whitespace base URL", mutate: func(s *Crawl4AIService) { s.BaseURL = "   " }, wantErr: "base_url must not be empty"},
 		{name: "invalid base URL", mutate: func(s *Crawl4AIService) { s.BaseURL = "crawl4ai:11235" }, wantErr: "absolute URL"},
 		{name: "invalid timeout", mutate: func(s *Crawl4AIService) { s.Timeout = "never" }, wantErr: "timeout"},
 		{name: "unsupported filter", mutate: func(s *Crawl4AIService) { s.Filter = "bm25" }, wantErr: "filter must be raw or fit"},
@@ -243,8 +243,8 @@ func TestValidateJinaContentRequiresItemLink(t *testing.T) {
 
 	invalidServices := services
 	invalidServices.Jina.BaseURL = "   "
-	if err := validateContent("test", content, invalidServices); err == nil || !strings.Contains(err.Error(), "not configured") {
-		t.Fatalf("validateContent() error = %v, want not configured error", err)
+	if err := validateContent("test", content, invalidServices); err == nil || !strings.Contains(err.Error(), "base_url must not be empty") {
+		t.Fatalf("validateContent() error = %v, want empty base_url error", err)
 	}
 	invalidServices = services
 	invalidServices.Jina.BaseURL = "r.jina.ai"
