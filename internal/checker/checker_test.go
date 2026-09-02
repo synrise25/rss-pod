@@ -35,7 +35,7 @@ func TestCheckCrawl4AI(t *testing.T) {
 
 	cfg := &config.Config{
 		Services: config.ServicesConfig{Content: config.ContentServices{Crawl4AI: config.Crawl4AIService{
-			BaseURL: server.URL, APIToken: "health-token",
+			BaseURL: server.URL, APIToken: "health-token", Proxy: "   ",
 		}}},
 		Defaults: config.DefaultsConfig{Content: config.ContentConfig{Type: "crawl4ai"}},
 	}

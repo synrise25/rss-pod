@@ -256,7 +256,7 @@ func checkJina(ctx context.Context, cfg *config.Config) (string, error) {
 	if !bytes.Contains(bytes.ToLower(body), []byte("example domain")) {
 		return "", fmt.Errorf("response did not contain expected content")
 	}
-	if jina.Proxy != "" {
+	if strings.TrimSpace(jina.Proxy) != "" {
 		return "content OK via configured proxy", nil
 	}
 	return "content OK via direct connection", nil
@@ -320,7 +320,7 @@ func checkCrawl4AI(ctx context.Context, cfg *config.Config) (string, error) {
 	if !result.Success || !strings.Contains(strings.ToLower(result.Markdown), "example domain") {
 		return "", fmt.Errorf("response did not contain expected content")
 	}
-	if service.Proxy != "" {
+	if strings.TrimSpace(service.Proxy) != "" {
 		return service.EffectiveFilter() + " Markdown content OK via configured proxy", nil
 	}
 	return service.EffectiveFilter() + " Markdown content OK via direct connection", nil
@@ -526,6 +526,7 @@ func newHTTPClient(proxy string, timeout time.Duration) *http.Client {
 }
 
 func newContentHTTPClient(proxy string, timeout time.Duration) (*http.Client, error) {
+	proxy = strings.TrimSpace(proxy)
 	if proxy != "" {
 		proxyURL, err := url.Parse(proxy)
 		if err != nil || proxyURL.Scheme == "" || proxyURL.Host == "" {
