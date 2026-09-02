@@ -86,6 +86,12 @@ func TestContentHTTPClientUsesOnlyExplicitProxy(t *testing.T) {
 	if got := proxyURL.String(); got != "http://127.0.0.1:4090" {
 		t.Fatalf("proxy URL = %q", got)
 	}
+
+	for _, invalid := range []string{"not-a-url", "://broken"} {
+		if _, err := contentHTTPClient(invalid, time.Second); err == nil {
+			t.Errorf("contentHTTPClient(%q) unexpectedly succeeded", invalid)
+		}
+	}
 }
 
 func TestFetchCrawl4AI(t *testing.T) {
@@ -172,6 +178,22 @@ func TestFetchCrawl4AIRejectsMissingBaseURL(t *testing.T) {
 	worker := ResolveContentWorker{Config: &config.Config{}}
 	_, err := worker.fetchCrawl4AI(context.Background(), "https://example.com")
 	if err == nil || !strings.Contains(err.Error(), "base_url is not configured") {
+		t.Fatalf("fetchCrawl4AI() error = %v", err)
+	}
+	var permanentErr *permanentError
+	if !errors.As(err, &permanentErr) {
+		t.Fatalf("fetchCrawl4AI() error is retryable: %v", err)
+	}
+}
+
+func TestFetchCrawl4AIRejectsInvalidProxyAsPermanent(t *testing.T) {
+	worker := ResolveContentWorker{Config: &config.Config{Services: config.ServicesConfig{
+		Content: config.ContentServices{Crawl4AI: config.Crawl4AIService{
+			BaseURL: "http://crawl4ai:11235", Proxy: "not-a-url",
+		}},
+	}}}
+	_, err := worker.fetchCrawl4AI(context.Background(), "https://example.com")
+	if err == nil || !strings.Contains(err.Error(), "invalid Crawl4AI proxy") {
 		t.Fatalf("fetchCrawl4AI() error = %v", err)
 	}
 	var permanentErr *permanentError

@@ -288,10 +288,11 @@ func (w *ResolveContentWorker) fetchDerivedRSS(ctx context.Context, source confi
 func contentHTTPClient(proxy string, timeout time.Duration) (*http.Client, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil
+	proxy = strings.TrimSpace(proxy)
 	if proxy != "" {
 		proxyURL, err := url.Parse(proxy)
-		if err != nil {
-			return nil, err
+		if err != nil || proxyURL.Scheme == "" || proxyURL.Host == "" {
+			return nil, fmt.Errorf("invalid proxy URL %q", proxy)
 		}
 		transport.Proxy = http.ProxyURL(proxyURL)
 	}
