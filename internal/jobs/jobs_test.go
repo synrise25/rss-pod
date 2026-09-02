@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -84,6 +85,86 @@ func TestContentHTTPClientUsesOnlyExplicitProxy(t *testing.T) {
 	}
 	if got := proxyURL.String(); got != "http://127.0.0.1:4090" {
 		t.Fatalf("proxy URL = %q", got)
+	}
+}
+
+func TestFetchCrawl4AI(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		filter string
+		want   string
+	}{
+		{name: "default fit", want: "fit"},
+		{name: "explicit raw", filter: "raw", want: "raw"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPost || r.URL.Path != "/md" {
+					t.Errorf("request = %s %s, want POST /md", r.Method, r.URL.Path)
+				}
+				if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
+					t.Errorf("Authorization = %q", got)
+				}
+				if got := r.Header.Get("Content-Type"); got != "application/json" {
+					t.Errorf("Content-Type = %q", got)
+				}
+				var request struct {
+					URL    string `json:"url"`
+					Filter string `json:"f"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+					t.Errorf("decode request: %v", err)
+				}
+				if request.URL != "https://example.com/article" || request.Filter != test.want {
+					t.Errorf("request body = %#v", request)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"success":true,"markdown":"# Crawled article"}`))
+			}))
+			defer server.Close()
+
+			worker := ResolveContentWorker{Config: &config.Config{Services: config.ServicesConfig{
+				Content: config.ContentServices{Crawl4AI: config.Crawl4AIService{
+					BaseURL: server.URL, APIToken: "test-token", Filter: test.filter,
+				}},
+			}}}
+			got, err := worker.fetchCrawl4AI(context.Background(), "https://example.com/article")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != "# Crawled article" {
+				t.Fatalf("fetchCrawl4AI() = %q", got)
+			}
+		})
+	}
+}
+
+func TestFetchCrawl4AIErrorClassification(t *testing.T) {
+	for _, test := range []struct {
+		status        int
+		wantPermanent bool
+	}{
+		{status: http.StatusBadRequest, wantPermanent: true},
+		{status: http.StatusTooManyRequests, wantPermanent: false},
+		{status: http.StatusInternalServerError, wantPermanent: false},
+	} {
+		t.Run(http.StatusText(test.status), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(test.status)
+			}))
+			defer server.Close()
+			worker := ResolveContentWorker{Config: &config.Config{Services: config.ServicesConfig{
+				Content: config.ContentServices{Crawl4AI: config.Crawl4AIService{BaseURL: server.URL}},
+			}}}
+			_, err := worker.fetchCrawl4AI(context.Background(), "https://example.com")
+			if err == nil {
+				t.Fatal("fetchCrawl4AI() unexpectedly succeeded")
+			}
+			var permanentErr *permanentError
+			if got := errors.As(err, &permanentErr); got != test.wantPermanent {
+				t.Fatalf("permanent = %t, want %t (error: %v)", got, test.wantPermanent, err)
+			}
+		})
 	}
 }
 

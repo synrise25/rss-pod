@@ -42,6 +42,7 @@ func Run(ctx context.Context, cfg *config.Config) []Result {
 		{name: "public-media", fn: checkPublicMedia},
 		{name: "rss", fn: checkRSS},
 		{name: "jina", fn: checkJina},
+		{name: "crawl4ai", fn: checkCrawl4AI},
 		{name: "llm", fn: checkLLM},
 		{name: "tts", fn: checkTTS},
 	}
@@ -255,6 +256,64 @@ func checkJina(ctx context.Context, cfg *config.Config) (string, error) {
 		return "content OK via configured proxy", nil
 	}
 	return "content OK via direct connection", nil
+}
+
+func checkCrawl4AI(ctx context.Context, cfg *config.Config) (string, error) {
+	used := false
+	for _, source := range cfg.Sources {
+		if source.Content != nil && source.Content.Type == "crawl4ai" {
+			used = true
+			break
+		}
+	}
+	if !used && cfg.Defaults.Content.Type != "crawl4ai" {
+		return "not used", nil
+	}
+
+	service := cfg.Services.Content.Crawl4AI
+	timeout, err := service.TimeoutDuration()
+	if err != nil {
+		return "", fmt.Errorf("timeout: %w", err)
+	}
+	payload, err := json.Marshal(struct {
+		URL    string `json:"url"`
+		Filter string `json:"f"`
+	}{URL: "https://example.com", Filter: service.EffectiveFilter()})
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(service.BaseURL, "/")+"/md", bytes.NewReader(payload))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	if service.APIToken != "" {
+		req.Header.Set("Authorization", "Bearer "+service.APIToken)
+	}
+	resp, err := newHTTPClient(service.Proxy, timeout).Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	var result struct {
+		Markdown string `json:"markdown"`
+		Success  bool   `json:"success"`
+	}
+	decodeErr := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result)
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	if decodeErr != nil {
+		return "", fmt.Errorf("response: %w", decodeErr)
+	}
+	if !result.Success || !strings.Contains(strings.ToLower(result.Markdown), "example domain") {
+		return "", fmt.Errorf("response did not contain expected content")
+	}
+	if service.Proxy != "" {
+		return fmt.Sprintf("%s/%s content OK via configured proxy", service.EffectiveFormat(), service.EffectiveFilter()), nil
+	}
+	return fmt.Sprintf("%s/%s content OK via direct connection", service.EffectiveFormat(), service.EffectiveFilter()), nil
 }
 
 func checkLLM(ctx context.Context, cfg *config.Config) (string, error) {

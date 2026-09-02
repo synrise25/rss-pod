@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoadCurrentConfig(t *testing.T) {
@@ -17,6 +18,9 @@ func TestLoadCurrentConfig(t *testing.T) {
 	t.Setenv("PUBLIC_MEDIA_BASE_URL", "http://127.0.0.1:9000/rsspod-media")
 	t.Setenv("JINA_API_KEY", "")
 	t.Setenv("JINA_PROXY", "")
+	t.Setenv("CRAWL4AI_BASE_URL", "")
+	t.Setenv("CRAWL4AI_API_TOKEN", "")
+	t.Setenv("CRAWL4AI_PROXY", "")
 	t.Setenv("LLM_DEEPSEEK_BASE_URL", "http://127.0.0.1:8080/v1")
 	t.Setenv("LLM_DEEPSEEK_API_KEY", "secret")
 	t.Setenv("LLM_DEEPSEEK_MODEL", "model-a")
@@ -37,6 +41,9 @@ func TestLoadCurrentConfig(t *testing.T) {
 	}
 	if cfg.Defaults.Content.Type != "rss-item" {
 		t.Fatalf("default content type = %q", cfg.Defaults.Content.Type)
+	}
+	if got := cfg.Services.Content.Crawl4AI; got.EffectiveFormat() != "markdown" || got.EffectiveFilter() != "fit" {
+		t.Fatalf("Crawl4AI service = %#v", got)
 	}
 	zhihu, ok := cfg.Source("zhihu-topic")
 	if !ok || zhihu.Content == nil || zhihu.Content.Type != "derived-rss" {
@@ -117,6 +124,49 @@ func TestValidateOptionalProxy(t *testing.T) {
 		if err := validateOptionalProxy("proxy", value); err == nil {
 			t.Errorf("validateOptionalProxy(%q) unexpectedly succeeded", value)
 		}
+	}
+}
+
+func TestCrawl4AIServiceDefaults(t *testing.T) {
+	service := Crawl4AIService{}
+	if got := service.EffectiveFormat(); got != "markdown" {
+		t.Fatalf("EffectiveFormat() = %q, want markdown", got)
+	}
+	if got := service.EffectiveFilter(); got != "fit" {
+		t.Fatalf("EffectiveFilter() = %q, want fit", got)
+	}
+	if got, err := service.TimeoutDuration(); err != nil || got != 45*time.Second {
+		t.Fatalf("TimeoutDuration() = %s, %v, want 45s", got, err)
+	}
+}
+
+func TestValidateCrawl4AIContent(t *testing.T) {
+	content := ContentConfig{Type: "crawl4ai", URL: URLMappingConfig{From: "item.link"}}
+	service := Crawl4AIService{BaseURL: "http://crawl4ai:11235", Timeout: "45s", Format: "markdown"}
+	if err := validateContent("test", content, ContentServices{Crawl4AI: service}); err != nil {
+		t.Fatalf("valid Crawl4AI content rejected: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		mutate  func(*Crawl4AIService)
+		wantErr string
+	}{
+		{name: "missing base URL", mutate: func(s *Crawl4AIService) { s.BaseURL = "" }, wantErr: "not configured"},
+		{name: "invalid base URL", mutate: func(s *Crawl4AIService) { s.BaseURL = "crawl4ai:11235" }, wantErr: "absolute URL"},
+		{name: "invalid timeout", mutate: func(s *Crawl4AIService) { s.Timeout = "never" }, wantErr: "timeout"},
+		{name: "unsupported format", mutate: func(s *Crawl4AIService) { s.Format = "html" }, wantErr: "format must be markdown"},
+		{name: "unsupported filter", mutate: func(s *Crawl4AIService) { s.Filter = "bm25" }, wantErr: "filter must be raw or fit"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			invalid := service
+			test.mutate(&invalid)
+			err := validateContent("test", content, ContentServices{Crawl4AI: invalid})
+			if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("validateContent() error = %v, want containing %q", err, test.wantErr)
+			}
+		})
 	}
 }
 

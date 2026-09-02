@@ -41,7 +41,7 @@ rss-pod 是一个用 Go 编写的 RSS 转播客应用。它会展开 RSS 内容�
 
 ## 主要能力
 
-- 支持直接 RSS、派生 RSS 和 Jina 内容展开
+- 支持直接 RSS、派生 RSS、Jina 和 Crawl4AI 内容展开
 - 支持多个兼容 OpenAI 协议的 LLM，并按顺序回退
 - 可复用的双人对话角色配置和严格脚本校验
 - 支持 Edge TTS、Azure Speech 与 Azure MultiTalker
