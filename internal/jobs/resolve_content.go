@@ -173,6 +173,9 @@ func (w *ResolveContentWorker) fetchJina(ctx context.Context, targetURL string) 
 
 func (w *ResolveContentWorker) fetchCrawl4AI(ctx context.Context, targetURL string) (string, error) {
 	service := w.Config.Services.Content.Crawl4AI
+	if strings.TrimSpace(service.BaseURL) == "" {
+		return "", permanent("Crawl4AI base_url is not configured")
+	}
 	timeout, err := service.TimeoutDuration()
 	if err != nil {
 		return "", permanent("invalid Crawl4AI timeout: %v", err)

@@ -271,6 +271,9 @@ func checkCrawl4AI(ctx context.Context, cfg *config.Config) (string, error) {
 	}
 
 	service := cfg.Services.Content.Crawl4AI
+	if strings.TrimSpace(service.BaseURL) == "" {
+		return "", fmt.Errorf("base_url is not configured")
+	}
 	timeout, err := service.TimeoutDuration()
 	if err != nil {
 		return "", fmt.Errorf("timeout: %w", err)

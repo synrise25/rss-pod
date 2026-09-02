@@ -168,6 +168,18 @@ func TestFetchCrawl4AIErrorClassification(t *testing.T) {
 	}
 }
 
+func TestFetchCrawl4AIRejectsMissingBaseURL(t *testing.T) {
+	worker := ResolveContentWorker{Config: &config.Config{}}
+	_, err := worker.fetchCrawl4AI(context.Background(), "https://example.com")
+	if err == nil || !strings.Contains(err.Error(), "base_url is not configured") {
+		t.Fatalf("fetchCrawl4AI() error = %v", err)
+	}
+	var permanentErr *permanentError
+	if !errors.As(err, &permanentErr) {
+		t.Fatalf("fetchCrawl4AI() error is retryable: %v", err)
+	}
+}
+
 func TestCallLLMRetryClassification(t *testing.T) {
 	speakers := []config.SpeakerConfig{{ID: "host"}}
 	tests := []struct {

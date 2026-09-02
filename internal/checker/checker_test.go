@@ -57,3 +57,11 @@ func TestCheckCrawl4AINotUsed(t *testing.T) {
 		t.Fatalf("detail = %q", detail)
 	}
 }
+
+func TestCheckCrawl4AIRejectsMissingBaseURL(t *testing.T) {
+	cfg := &config.Config{Defaults: config.DefaultsConfig{Content: config.ContentConfig{Type: "crawl4ai"}}}
+	_, err := checkCrawl4AI(context.Background(), cfg)
+	if err == nil || err.Error() != "base_url is not configured" {
+		t.Fatalf("checkCrawl4AI() error = %v", err)
+	}
+}
