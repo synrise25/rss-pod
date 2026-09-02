@@ -1,6 +1,11 @@
 const SPEED_KEY = "rss-pod.player-speed";
 const RESUME_KEY = "rss-pod.resume-state";
 const DEMO_AUDIO = "/demo.mp3";
+const MEDIA_ARTWORK = [
+  { src: "/icons/favicon.png", sizes: "64x64", type: "image/png" },
+  { src: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+];
+const DEFAULT_SEEK_OFFSET = 10;
 
 const localeKey = /^\/zh-cn(?:\/|$)/i.test(window.location.pathname) ? "zh-CN" : "en";
 const copy = {
@@ -327,6 +332,7 @@ async function toggleEpisode(episode) {
 function selectEpisode(episode, { autoplay = false, resumeAt = 0 } = {}) {
   state.currentEpisodeID = episode.id;
   state.restoringResume = resumeAt > 0;
+  clearMediaSessionPosition();
   elements.audio.defaultPlaybackRate = state.speed;
   if (resumeAt > 0) {
     const resumeEpisodeID = episode.id;
@@ -343,6 +349,7 @@ function selectEpisode(episode, { autoplay = false, resumeAt = 0 } = {}) {
   elements.audio.src = episode.audioURL;
   elements.audio.load();
   applyPlaybackRate();
+  document.title = episode.title;
   elements.nowPlayingTitle.textContent = episode.title;
   elements.nowPlayingSource.textContent = sourceName(episode.sourceID);
   elements.playToggle.disabled = false;
@@ -375,12 +382,19 @@ function bindPlayerEvents() {
   elements.audio.addEventListener("loadedmetadata", () => {
     applyPlaybackRate();
     updateProgress();
+    updateMediaSessionPosition();
   });
-  elements.audio.addEventListener("durationchange", updateProgress);
+  elements.audio.addEventListener("durationchange", () => {
+    updateProgress();
+    updateMediaSessionPosition();
+  });
   elements.audio.addEventListener("timeupdate", () => {
     updateProgress();
+    updateMediaSessionPosition();
     persistResumeState();
   });
+  elements.audio.addEventListener("seeked", updateMediaSessionPosition);
+  elements.audio.addEventListener("ratechange", updateMediaSessionPosition);
   elements.progress.addEventListener("input", () => {
     if (!Number.isFinite(elements.audio.duration)) return;
     elements.audio.currentTime = (Number(elements.progress.value) / 100) * elements.audio.duration;
@@ -394,6 +408,9 @@ function renderPlaybackState() {
   const playing = !elements.audio.paused;
   elements.playToggleIcon.src = playing ? "/icons/pause.svg" : "/icons/play.svg";
   elements.playToggle.setAttribute("aria-label", playing ? copy.pause : copy.play);
+  updateMediaSessionPlaybackState();
+  updateMediaSessionPosition();
+  registerMediaSessionActions();
   renderEpisodeList();
   scrollCurrentEpisodeIntoView();
 }
@@ -671,25 +688,115 @@ function writeStorage(key, value) {
 }
 
 function updateMediaSession(episode) {
-  if (!("mediaSession" in navigator) || !("MediaMetadata" in window)) return;
-  navigator.mediaSession.metadata = new MediaMetadata({
+  const mediaSession = getMediaSession();
+  if (!mediaSession) return;
+
+  // Some embedded and in-car browsers implement the Media Session actions
+  // without exposing MediaMetadata. Keep every capability independently
+  // detectable so those browsers still receive transport and seek controls.
+  const metadata = {
     title: episode.title,
     artist: sourceName(episode.sourceID),
     album: copy.mediaAlbum,
-  });
+    artwork: MEDIA_ARTWORK,
+  };
+  try {
+    mediaSession.metadata =
+      typeof window.MediaMetadata === "function" ? new window.MediaMetadata(metadata) : metadata;
+  } catch {
+    // document.title remains a useful metadata fallback for partial clients.
+  }
+
+  registerMediaSessionActions();
+  updateMediaSessionPlaybackState();
+  updateMediaSessionPosition(episode.durationSeconds);
+}
+
+function registerMediaSessionActions() {
+  const mediaSession = getMediaSession();
+  if (!mediaSession || typeof mediaSession.setActionHandler !== "function") return;
   const handlers = {
     play: () => safePlay(),
     pause: () => elements.audio.pause(),
     previoustrack: () => moveInQueue(-1),
     nexttrack: () => moveInQueue(1),
+    seekbackward: (details) => seekBy(-(details.seekOffset || DEFAULT_SEEK_OFFSET)),
+    seekforward: (details) => seekBy(details.seekOffset || DEFAULT_SEEK_OFFSET),
+    seekto: (details) => seekTo(details.seekTime, details.fastSeek),
   };
   for (const [action, handler] of Object.entries(handlers)) {
     try {
-      navigator.mediaSession.setActionHandler(action, handler);
+      mediaSession.setActionHandler(action, handler);
     } catch {
       // Some in-car browsers expose Media Session but only support a subset.
     }
   }
+}
+
+function updateMediaSessionPlaybackState() {
+  const mediaSession = getMediaSession();
+  if (!mediaSession || !("playbackState" in mediaSession)) return;
+  try {
+    mediaSession.playbackState = elements.audio.paused ? "paused" : "playing";
+  } catch {
+    // Playback remains controlled by the media element on partial clients.
+  }
+}
+
+function updateMediaSessionPosition(fallbackDuration = null) {
+  const mediaSession = getMediaSession();
+  if (!mediaSession || typeof mediaSession.setPositionState !== "function") return;
+
+  const audioDuration = elements.audio.duration;
+  const duration =
+    Number.isFinite(audioDuration) && audioDuration > 0 ? audioDuration : fallbackDuration;
+  if (!Number.isFinite(duration) || duration <= 0) return;
+
+  const currentTime = Number.isFinite(elements.audio.currentTime) ? elements.audio.currentTime : 0;
+  const playbackRate =
+    Number.isFinite(elements.audio.playbackRate) && elements.audio.playbackRate > 0
+      ? elements.audio.playbackRate
+      : 1;
+  try {
+    mediaSession.setPositionState({
+      duration,
+      playbackRate,
+      position: Math.min(duration, Math.max(0, currentTime)),
+    });
+  } catch {
+    // Invalid or stale media state should not interrupt playback.
+  }
+}
+
+function clearMediaSessionPosition() {
+  const mediaSession = getMediaSession();
+  if (!mediaSession || typeof mediaSession.setPositionState !== "function") return;
+  try {
+    mediaSession.setPositionState();
+  } catch {
+    // Older clients may not support clearing position state.
+  }
+}
+
+function seekBy(offset) {
+  if (!Number.isFinite(offset)) return;
+  seekTo(elements.audio.currentTime + offset);
+}
+
+function seekTo(time, fastSeek = false) {
+  const duration = elements.audio.duration;
+  if (!Number.isFinite(time) || !Number.isFinite(duration) || duration <= 0) return;
+  const target = Math.min(duration, Math.max(0, time));
+  try {
+    if (fastSeek && typeof elements.audio.fastSeek === "function") elements.audio.fastSeek(target);
+    else elements.audio.currentTime = target;
+  } catch {
+    // Ignore seek requests that the current media resource cannot satisfy.
+  }
+}
+
+function getMediaSession() {
+  return "mediaSession" in navigator ? navigator.mediaSession : null;
 }
 
 function isDemoMode() {
