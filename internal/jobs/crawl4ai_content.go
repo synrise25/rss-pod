@@ -105,7 +105,7 @@ func (w *ResolveContentWorker) fetchCrawl4AIResults(ctx context.Context, urls []
 			if message == "" {
 				message = "unsuccessful crawl"
 			}
-			return nil, fmt.Errorf("Crawl4AI result %d failed: %s", index, message)
+			return nil, fmt.Errorf("Crawl4AI result %d for %s failed: %s", index, urls[index], message)
 		}
 	}
 	return response.Results, nil

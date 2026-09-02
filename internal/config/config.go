@@ -754,17 +754,18 @@ func validateContent(sourceID string, content ContentConfig, services ContentSer
 		return nil
 	case "jina":
 		service := content.Jina.EffectiveService(services.Jina)
+		field := "source " + sourceID + " content.jina"
 		baseURL := strings.TrimSpace(service.BaseURL)
 		if baseURL == "" {
 			return fmt.Errorf("source %s uses jina but services.content.jina is not configured", sourceID)
 		}
-		if err := validateURL("services.content.jina.base_url", baseURL); err != nil {
+		if err := validateURL(field+".base_url", baseURL); err != nil {
 			return err
 		}
 		if _, err := service.TimeoutDuration(); err != nil {
-			return fmt.Errorf("services.content.jina.timeout %w", err)
+			return fmt.Errorf("%s.timeout %w", field, err)
 		}
-		if err := validateOptionalProxy("services.content.jina.proxy", service.Proxy); err != nil {
+		if err := validateOptionalProxy(field+".proxy", service.Proxy); err != nil {
 			return err
 		}
 		if content.URL.From != "item.link" {
@@ -775,15 +776,16 @@ func validateContent(sourceID string, content ContentConfig, services ContentSer
 		}
 	case "crawl4ai":
 		service := content.Crawl4AI.EffectiveService(services.Crawl4AI)
+		field := "source " + sourceID + " content.crawl4ai"
 		baseURL := strings.TrimSpace(service.BaseURL)
 		if baseURL == "" {
 			return fmt.Errorf("source %s uses crawl4ai but services.content.crawl4ai is not configured", sourceID)
 		}
-		if err := validateURL("services.content.crawl4ai.base_url", baseURL); err != nil {
+		if err := validateURL(field+".base_url", baseURL); err != nil {
 			return err
 		}
 		if _, err := service.TimeoutDuration(); err != nil {
-			return fmt.Errorf("services.content.crawl4ai.timeout %w", err)
+			return fmt.Errorf("%s.timeout %w", field, err)
 		}
 		mode := service.EffectiveMode()
 		if mode != "md" && mode != "crawl" {
@@ -792,7 +794,7 @@ func validateContent(sourceID string, content ContentConfig, services ContentSer
 		if filter := service.EffectiveFilter(); filter != "raw" && filter != "fit" {
 			return fmt.Errorf("source %s content.crawl4ai.filter must be raw or fit", sourceID)
 		}
-		if err := validateOptionalProxy("services.content.crawl4ai.proxy", service.Proxy); err != nil {
+		if err := validateOptionalProxy(field+".proxy", service.Proxy); err != nil {
 			return err
 		}
 		if content.URL.From != "item.link" {

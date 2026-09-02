@@ -109,6 +109,19 @@ func TestCheckCrawl4AIRejectsMissingBaseURL(t *testing.T) {
 	}
 }
 
+func TestCheckCrawl4AIRejectsUnsupportedMode(t *testing.T) {
+	cfg := &config.Config{
+		Services: config.ServicesConfig{Content: config.ContentServices{Crawl4AI: config.Crawl4AIService{
+			BaseURL: "http://crawl4ai:11235", Mode: "browser",
+		}}},
+		Defaults: config.DefaultsConfig{Content: config.ContentConfig{Type: "crawl4ai"}},
+	}
+	_, err := checkCrawl4AI(context.Background(), cfg)
+	if err == nil || err.Error() != `unsupported mode "browser"` {
+		t.Fatalf("checkCrawl4AI() error = %v", err)
+	}
+}
+
 func TestCheckCrawl4AIReportsHTTPStatusBeforeDecoding(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)

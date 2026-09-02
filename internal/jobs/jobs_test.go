@@ -296,6 +296,19 @@ func TestFetchCrawl4AIErrorClassification(t *testing.T) {
 	}
 }
 
+func TestFetchCrawl4AIResultsIdentifiesFailedURL(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"results":[{"success":false,"error_message":"blocked"}]}`))
+	}))
+	defer server.Close()
+	worker := ResolveContentWorker{}
+	_, err := worker.fetchCrawl4AIResults(context.Background(), []string{"https://www.v2ex.com/t/123?p=2"}, config.Crawl4AIService{BaseURL: server.URL})
+	if err == nil || !strings.Contains(err.Error(), "https://www.v2ex.com/t/123?p=2") {
+		t.Fatalf("fetchCrawl4AIResults() error = %v", err)
+	}
+}
+
 func TestFetchCrawl4AIRejectsMissingBaseURL(t *testing.T) {
 	worker := ResolveContentWorker{Config: &config.Config{}}
 	_, err := worker.fetchCrawl4AI(context.Background(), "https://example.com", config.ContentConfig{Type: "crawl4ai"})

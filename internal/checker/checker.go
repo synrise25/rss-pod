@@ -325,17 +325,20 @@ func checkCrawl4AIService(ctx context.Context, service config.Crawl4AIService, m
 	}
 	var path string
 	var payload []byte
-	if mode == "crawl" {
+	switch mode {
+	case "crawl":
 		path = "/crawl"
 		payload, err = json.Marshal(struct {
 			URLs []string `json:"urls"`
 		}{URLs: []string{"https://example.com"}})
-	} else {
+	case "md":
 		path = "/md"
 		payload, err = json.Marshal(struct {
 			URL    string `json:"url"`
 			Filter string `json:"f"`
 		}{URL: "https://example.com", Filter: service.EffectiveFilter()})
+	default:
+		return "", fmt.Errorf("unsupported mode %q", mode)
 	}
 	if err != nil {
 		return "", err
