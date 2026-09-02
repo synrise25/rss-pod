@@ -115,7 +115,7 @@ func TestValidateLoopbackListen(t *testing.T) {
 }
 
 func TestValidateOptionalProxy(t *testing.T) {
-	for _, value := range []string{"", "http://127.0.0.1:4090", "socks5://localhost:1080"} {
+	for _, value := range []string{"", "   ", "http://127.0.0.1:4090", "  socks5://localhost:1080  "} {
 		if err := validateOptionalProxy("proxy", value); err != nil {
 			t.Errorf("validateOptionalProxy(%q) error = %v", value, err)
 		}
@@ -139,7 +139,7 @@ func TestCrawl4AIServiceDefaults(t *testing.T) {
 
 func TestValidateCrawl4AIContent(t *testing.T) {
 	content := ContentConfig{Type: "crawl4ai", URL: URLMappingConfig{From: "item.link"}}
-	service := Crawl4AIService{BaseURL: "http://crawl4ai:11235", Timeout: "45s"}
+	service := Crawl4AIService{BaseURL: "  http://crawl4ai:11235  ", Timeout: "45s"}
 	if err := validateContent("test", content, ContentServices{Crawl4AI: service}); err != nil {
 		t.Fatalf("valid Crawl4AI content rejected: %v", err)
 	}
@@ -150,6 +150,7 @@ func TestValidateCrawl4AIContent(t *testing.T) {
 		wantErr string
 	}{
 		{name: "missing base URL", mutate: func(s *Crawl4AIService) { s.BaseURL = "" }, wantErr: "not configured"},
+		{name: "whitespace base URL", mutate: func(s *Crawl4AIService) { s.BaseURL = "   " }, wantErr: "not configured"},
 		{name: "invalid base URL", mutate: func(s *Crawl4AIService) { s.BaseURL = "crawl4ai:11235" }, wantErr: "absolute URL"},
 		{name: "invalid timeout", mutate: func(s *Crawl4AIService) { s.Timeout = "never" }, wantErr: "timeout"},
 		{name: "unsupported filter", mutate: func(s *Crawl4AIService) { s.Filter = "bm25" }, wantErr: "filter must be raw or fit"},
@@ -172,13 +173,18 @@ func TestValidateCrawl4AIContent(t *testing.T) {
 }
 
 func TestValidateJinaContentRequiresItemLink(t *testing.T) {
-	services := ContentServices{Jina: JinaService{BaseURL: "https://r.jina.ai", Timeout: "45s"}}
+	services := ContentServices{Jina: JinaService{BaseURL: "  https://r.jina.ai  ", Timeout: "45s"}}
 	content := ContentConfig{Type: "jina", URL: URLMappingConfig{From: "item.link"}}
 	if err := validateContent("test", content, services); err != nil {
 		t.Fatalf("valid Jina content rejected: %v", err)
 	}
 
 	invalidServices := services
+	invalidServices.Jina.BaseURL = "   "
+	if err := validateContent("test", content, invalidServices); err == nil || !strings.Contains(err.Error(), "not configured") {
+		t.Fatalf("validateContent() error = %v, want not configured error", err)
+	}
+	invalidServices = services
 	invalidServices.Jina.BaseURL = "r.jina.ai"
 	if err := validateContent("test", content, invalidServices); err == nil || !strings.Contains(err.Error(), "absolute URL") {
 		t.Fatalf("validateContent() error = %v, want absolute URL validation error", err)

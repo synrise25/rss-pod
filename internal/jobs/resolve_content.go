@@ -131,6 +131,10 @@ func (w *ResolveContentWorker) resolve(ctx context.Context, episodeID string) er
 
 func (w *ResolveContentWorker) fetchJina(ctx context.Context, targetURL string) (string, error) {
 	service := w.Config.Services.Content.Jina
+	baseURL := strings.TrimSpace(service.BaseURL)
+	if baseURL == "" {
+		return "", permanent("Jina base_url is not configured")
+	}
 	timeout, err := service.TimeoutDuration()
 	if err != nil {
 		return "", permanent("invalid Jina timeout: %v", err)
@@ -139,7 +143,7 @@ func (w *ResolveContentWorker) fetchJina(ctx context.Context, targetURL string) 
 	if err != nil {
 		return "", permanent("invalid Jina proxy: %v", err)
 	}
-	requestURL := strings.TrimRight(service.BaseURL, "/") + "/" + targetURL
+	requestURL := strings.TrimRight(baseURL, "/") + "/" + targetURL
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 	if err != nil {
 		return "", permanent("create Jina request: %v", err)
@@ -173,7 +177,8 @@ func (w *ResolveContentWorker) fetchJina(ctx context.Context, targetURL string) 
 
 func (w *ResolveContentWorker) fetchCrawl4AI(ctx context.Context, targetURL string) (string, error) {
 	service := w.Config.Services.Content.Crawl4AI
-	if strings.TrimSpace(service.BaseURL) == "" {
+	baseURL := strings.TrimSpace(service.BaseURL)
+	if baseURL == "" {
 		return "", permanent("Crawl4AI base_url is not configured")
 	}
 	timeout, err := service.TimeoutDuration()
@@ -191,7 +196,7 @@ func (w *ResolveContentWorker) fetchCrawl4AI(ctx context.Context, targetURL stri
 	if err != nil {
 		return "", permanent("encode Crawl4AI request: %v", err)
 	}
-	requestURL := strings.TrimRight(service.BaseURL, "/") + "/md"
+	requestURL := strings.TrimRight(baseURL, "/") + "/md"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, bytes.NewReader(payload))
 	if err != nil {
 		return "", permanent("create Crawl4AI request: %v", err)

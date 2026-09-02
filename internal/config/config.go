@@ -657,7 +657,8 @@ func validateMultiTalkerProfile(voices []SpeakerVoice) error {
 }
 
 func validateOptionalProxy(field, value string) error {
-	if strings.TrimSpace(value) == "" {
+	value = strings.TrimSpace(value)
+	if value == "" {
 		return nil
 	}
 	u, err := url.Parse(value)
@@ -691,10 +692,11 @@ func validateContent(sourceID string, content ContentConfig, services ContentSer
 	case "rss-item":
 		return nil
 	case "jina":
-		if services.Jina.BaseURL == "" {
+		baseURL := strings.TrimSpace(services.Jina.BaseURL)
+		if baseURL == "" {
 			return fmt.Errorf("source %s uses jina but services.content.jina is not configured", sourceID)
 		}
-		if err := validateURL("services.content.jina.base_url", services.Jina.BaseURL); err != nil {
+		if err := validateURL("services.content.jina.base_url", baseURL); err != nil {
 			return err
 		}
 		if _, err := services.Jina.TimeoutDuration(); err != nil {
@@ -705,10 +707,11 @@ func validateContent(sourceID string, content ContentConfig, services ContentSer
 		}
 	case "crawl4ai":
 		service := services.Crawl4AI
-		if service.BaseURL == "" {
+		baseURL := strings.TrimSpace(service.BaseURL)
+		if baseURL == "" {
 			return fmt.Errorf("source %s uses crawl4ai but services.content.crawl4ai is not configured", sourceID)
 		}
-		if err := validateURL("services.content.crawl4ai.base_url", service.BaseURL); err != nil {
+		if err := validateURL("services.content.crawl4ai.base_url", baseURL); err != nil {
 			return err
 		}
 		if _, err := service.TimeoutDuration(); err != nil {

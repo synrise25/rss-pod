@@ -225,11 +225,15 @@ func checkJina(ctx context.Context, cfg *config.Config) (string, error) {
 	}
 
 	jina := cfg.Services.Content.Jina
+	baseURL := strings.TrimSpace(jina.BaseURL)
+	if baseURL == "" {
+		return "", fmt.Errorf("base_url is not configured")
+	}
 	timeout, err := jina.TimeoutDuration()
 	if err != nil {
 		return "", fmt.Errorf("timeout: %w", err)
 	}
-	requestURL := strings.TrimRight(jina.BaseURL, "/") + "/http://example.com"
+	requestURL := strings.TrimRight(baseURL, "/") + "/http://example.com"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 	if err != nil {
 		return "", err
@@ -275,7 +279,8 @@ func checkCrawl4AI(ctx context.Context, cfg *config.Config) (string, error) {
 	}
 
 	service := cfg.Services.Content.Crawl4AI
-	if strings.TrimSpace(service.BaseURL) == "" {
+	baseURL := strings.TrimSpace(service.BaseURL)
+	if baseURL == "" {
 		return "", fmt.Errorf("base_url is not configured")
 	}
 	timeout, err := service.TimeoutDuration()
@@ -289,7 +294,7 @@ func checkCrawl4AI(ctx context.Context, cfg *config.Config) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(service.BaseURL, "/")+"/md", bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(baseURL, "/")+"/md", bytes.NewReader(payload))
 	if err != nil {
 		return "", err
 	}

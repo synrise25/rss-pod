@@ -131,7 +131,7 @@ func TestFetchCrawl4AI(t *testing.T) {
 
 			worker := ResolveContentWorker{Config: &config.Config{Services: config.ServicesConfig{
 				Content: config.ContentServices{Crawl4AI: config.Crawl4AIService{
-					BaseURL: server.URL, APIToken: "test-token", Filter: test.filter,
+					BaseURL: "  " + server.URL + "  ", APIToken: "test-token", Filter: test.filter,
 				}},
 			}}}
 			got, err := worker.fetchCrawl4AI(context.Background(), "https://example.com/article")
@@ -183,6 +183,18 @@ func TestFetchCrawl4AIRejectsMissingBaseURL(t *testing.T) {
 	var permanentErr *permanentError
 	if !errors.As(err, &permanentErr) {
 		t.Fatalf("fetchCrawl4AI() error is retryable: %v", err)
+	}
+}
+
+func TestFetchJinaRejectsMissingBaseURL(t *testing.T) {
+	worker := ResolveContentWorker{Config: &config.Config{}}
+	_, err := worker.fetchJina(context.Background(), "https://example.com")
+	if err == nil || !strings.Contains(err.Error(), "base_url is not configured") {
+		t.Fatalf("fetchJina() error = %v", err)
+	}
+	var permanentErr *permanentError
+	if !errors.As(err, &permanentErr) {
+		t.Fatalf("fetchJina() error is retryable: %v", err)
 	}
 }
 

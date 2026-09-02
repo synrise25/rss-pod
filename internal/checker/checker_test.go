@@ -35,7 +35,7 @@ func TestCheckCrawl4AI(t *testing.T) {
 
 	cfg := &config.Config{
 		Services: config.ServicesConfig{Content: config.ContentServices{Crawl4AI: config.Crawl4AIService{
-			BaseURL: server.URL, APIToken: "health-token", Proxy: "   ",
+			BaseURL: "  " + server.URL + "  ", APIToken: "health-token", Proxy: "   ",
 		}}},
 		Defaults: config.DefaultsConfig{Content: config.ContentConfig{Type: "crawl4ai"}},
 	}
@@ -55,6 +55,14 @@ func TestCheckCrawl4AINotUsed(t *testing.T) {
 	}
 	if detail != "not used" {
 		t.Fatalf("detail = %q", detail)
+	}
+}
+
+func TestCheckJinaRejectsMissingBaseURL(t *testing.T) {
+	cfg := &config.Config{Defaults: config.DefaultsConfig{Content: config.ContentConfig{Type: "jina"}}}
+	_, err := checkJina(context.Background(), cfg)
+	if err == nil || err.Error() != "base_url is not configured" {
+		t.Fatalf("checkJina() error = %v", err)
 	}
 }
 
