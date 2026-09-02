@@ -698,6 +698,9 @@ func validateContent(sourceID string, content ContentConfig, services ContentSer
 		if services.Jina.BaseURL == "" {
 			return fmt.Errorf("source %s uses jina but services.content.jina is not configured", sourceID)
 		}
+		if content.URL.From != "item.link" {
+			return fmt.Errorf("source %s jina currently supports only url.from=item.link", sourceID)
+		}
 	case "crawl4ai":
 		service := services.Crawl4AI
 		if service.BaseURL == "" {

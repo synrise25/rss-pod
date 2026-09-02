@@ -175,6 +175,18 @@ func TestValidateCrawl4AIContent(t *testing.T) {
 	}
 }
 
+func TestValidateJinaContentRequiresItemLink(t *testing.T) {
+	services := ContentServices{Jina: JinaService{BaseURL: "https://r.jina.ai"}}
+	content := ContentConfig{Type: "jina", URL: URLMappingConfig{From: "item.link"}}
+	if err := validateContent("test", content, services); err != nil {
+		t.Fatalf("valid Jina content rejected: %v", err)
+	}
+	content.URL.From = "feed.url"
+	if err := validateContent("test", content, services); err == nil || !strings.Contains(err.Error(), "url.from=item.link") {
+		t.Fatalf("validateContent() error = %v, want item.link validation error", err)
+	}
+}
+
 func TestLoadRejectsUnknownTTSService(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	data := strings.Replace(minimalConfig, "tts: {edge:", "tts: {chrome:", 1)
