@@ -282,11 +282,11 @@ func renderDocuments(documents []llmDocument) (string, renderDocumentsStats) {
 
 func renderDocumentHeader(document llmDocument) string {
 	header := fmt.Sprintf("\n\n## 资料 %d\n", document.Position+1)
-	if strings.TrimSpace(document.Title) != "" {
-		header += "标题：" + document.Title + "\n"
+	if title := strings.TrimSpace(document.Title); title != "" {
+		header += "标题：" + title + "\n"
 	}
-	if strings.TrimSpace(document.SourceURL) != "" {
-		header += "来源：" + document.SourceURL + "\n"
+	if sourceURL := strings.TrimSpace(document.SourceURL); sourceURL != "" {
+		header += "来源：" + sourceURL + "\n"
 	}
 	return header + "\n"
 }

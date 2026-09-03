@@ -601,6 +601,16 @@ func TestRenderDocumentsOmitsEmptyMetadataLines(t *testing.T) {
 	}
 }
 
+func TestRenderDocumentsTrimsMetadata(t *testing.T) {
+	documents := []llmDocument{{
+		Position: 0, Title: "  标题\n", SourceURL: " https://example.com/article \t", Content: "正文",
+	}}
+	content, _ := renderDocuments(documents)
+	if want := "## 资料 1\n标题：标题\n来源：https://example.com/article\n\n正文"; content != want {
+		t.Fatalf("renderDocuments() = %q, want %q", content, want)
+	}
+}
+
 func TestRenderPromptParameters(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "prompt.tmpl")
 	if err := os.WriteFile(path, []byte(`为 {{ source.name }} 生成 {{ speaker_count }} 人、约 {{ generation.target_duration }} 的对话。\n{{ speakers }}`), 0o600); err != nil {
