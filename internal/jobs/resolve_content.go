@@ -212,7 +212,7 @@ func (w *ResolveContentWorker) fetchDerivedRSS(ctx context.Context, source confi
 		return nil, fmt.Errorf("fetch derived RSS: %w", err)
 	}
 	limit := min(len(feed.Items), w.Config.EffectiveLimits(source).MaxDocumentsPerItem)
-	documents := make([]resolvedDocument, 0, limit)
+	documents := make([]resolvedDocument, 0, limit+1)
 	for _, item := range feed.Items[:limit] {
 		content := item.Content
 		if strings.TrimSpace(content) == "" {
@@ -224,7 +224,37 @@ func (w *ResolveContentWorker) fetchDerivedRSS(ctx context.Context, source confi
 		}
 		documents = append(documents, resolvedDocument{Title: item.Title, SourceURL: item.Link, Content: content})
 	}
+	if len(documents) > 0 {
+		if channel, ok := derivedRSSChannelDocument(feed, feedURL); ok {
+			documents = append([]resolvedDocument{channel}, documents...)
+		}
+	}
 	return documents, nil
+}
+
+func derivedRSSChannelDocument(feed *gofeed.Feed, feedURL string) (resolvedDocument, bool) {
+	title := htmlToText(feed.Title)
+	description := htmlToText(feed.Description)
+	if title == "" && description == "" {
+		return resolvedDocument{}, false
+	}
+
+	lines := make([]string, 0, 2)
+	if title != "" {
+		lines = append(lines, "频道标题："+title)
+	}
+	if description != "" {
+		lines = append(lines, "频道描述："+description)
+	}
+	sourceURL := strings.TrimSpace(feed.Link)
+	if sourceURL == "" {
+		sourceURL = feedURL
+	}
+	return resolvedDocument{
+		Title:     "派生 RSS 频道信息",
+		SourceURL: sourceURL,
+		Content:   strings.Join(lines, "\n"),
+	}, true
 }
 
 func contentHTTPClient(proxy string, timeout time.Duration) (*http.Client, error) {
