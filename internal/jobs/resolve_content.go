@@ -226,7 +226,9 @@ func (w *ResolveContentWorker) fetchDerivedRSS(ctx context.Context, source confi
 	}
 	if len(documents) > 0 {
 		if channel, ok := derivedRSSChannelDocument(feed, feedURL); ok {
-			documents = append([]resolvedDocument{channel}, documents...)
+			documents = append(documents, resolvedDocument{})
+			copy(documents[1:], documents[:len(documents)-1])
+			documents[0] = channel
 		}
 	}
 	return documents, nil
