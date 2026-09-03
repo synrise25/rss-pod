@@ -211,9 +211,12 @@ func (w *ResolveContentWorker) fetchDerivedRSS(ctx context.Context, source confi
 	if err != nil {
 		return nil, fmt.Errorf("fetch derived RSS: %w", err)
 	}
-	limit := min(len(feed.Items), w.Config.EffectiveLimits(source).MaxDocumentsPerItem)
-	documents := make([]resolvedDocument, 0, limit+1)
-	for _, item := range feed.Items[:limit] {
+	limit := w.Config.EffectiveLimits(source).MaxDocumentsPerItem
+	documents := make([]resolvedDocument, 0, min(len(feed.Items), limit)+1)
+	for _, item := range feed.Items {
+		if len(documents) == limit {
+			break
+		}
 		content := item.Content
 		if strings.TrimSpace(content) == "" {
 			content = item.Description

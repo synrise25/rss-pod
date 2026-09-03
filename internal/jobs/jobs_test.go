@@ -102,6 +102,7 @@ func TestFetchDerivedRSSCompactsMetadataAndLimitedItems(t *testing.T) {
   <title>测试&amp;频道</title>
   <link>https://example.com/channel</link>
   <description><![CDATA[<p>关注 <strong>AI</strong> 的每日动态。</p>]]></description>
+  <item><title>空内容</title><link>https://example.com/empty</link></item>
   <item><title>第一篇</title><link>https://example.com/1</link><description>第一篇正文</description></item>
   <item><title>第二篇</title><link>https://example.com/2</link><description>第二篇正文</description></item>
 </channel></rss>`))
