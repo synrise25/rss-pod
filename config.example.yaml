@@ -215,8 +215,8 @@ defaults:
   # type 只能是 rss-item、derived-rss、jina 或 crawl4ai：
   # - rss-item: use the entry item's content or description.
   # - rss-item：直接使用入口 RSS item 的 content/description。
-  # - derived-rss: derive another feed and use its channel metadata plus items as Documents.
-  # - derived-rss：从入口 item 推导另一个 RSS，并将其 channel 元信息和 items 作为 Documents。
+  # - derived-rss: derive another feed and use its items as Documents, prepending channel metadata when at least one item has usable content.
+  # - derived-rss：从入口 item 推导另一个 RSS，将其 items 作为 Documents；至少一个 item 有可用内容时，在前面附加 channel 元信息。
   # - jina: resolve the derived URL through services.content.jina.
   # - jina：将推导出的 URL 交给 services.content.jina 读取。
   # - crawl4ai: resolve the item URL through services.content.crawl4ai; mode defaults to md and filter to fit.
