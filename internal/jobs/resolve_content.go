@@ -209,7 +209,7 @@ func (w *ResolveContentWorker) fetchDerivedRSS(ctx context.Context, source confi
 	parser.Client = client
 	feed, err := parser.ParseURLWithContext(feedURL, ctx)
 	if err != nil {
-		return nil, fmt.Errorf("fetch derived RSS: %w", err)
+		return nil, fmt.Errorf("fetch derived feed: %w", err)
 	}
 	limit := w.Config.EffectiveLimits(source).MaxDocumentsPerItem
 	documents := make([]resolvedDocument, 0, min(len(feed.Items), limit)+1)
