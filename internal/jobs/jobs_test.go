@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mmcdole/gofeed"
+
 	"github.com/synrise25/rss-pod/internal/config"
 )
 
@@ -91,6 +93,87 @@ func TestContentHTTPClientUsesOnlyExplicitProxy(t *testing.T) {
 		if _, err := contentHTTPClient(invalid, time.Second); err == nil {
 			t.Errorf("contentHTTPClient(%q) unexpectedly succeeded", invalid)
 		}
+	}
+}
+
+func TestFetchDerivedRSSIncludesChannelMetadataBeforeLimitedItems(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/rss+xml")
+		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel>
+  <title>测试&amp;频道</title>
+  <link>https://example.com/channel</link>
+  <description><![CDATA[<p>关注 <strong>AI</strong> 的每日动态。</p>]]></description>
+  <item><title>第一篇</title><link>https://example.com/1</link><description>第一篇正文</description></item>
+  <item><title>第二篇</title><link>https://example.com/2</link><description>第二篇正文</description></item>
+</channel></rss>`))
+	}))
+	defer server.Close()
+
+	worker := ResolveContentWorker{Config: &config.Config{
+		Defaults: config.DefaultsConfig{Limits: config.LimitsConfig{MaxDocumentsPerItem: 1}},
+	}}
+	documents, err := worker.fetchDerivedRSS(
+		context.Background(),
+		config.SourceConfig{},
+		config.ContentConfig{URL: config.URLMappingConfig{
+			From: "item.link", Regex: `^https://example\.com/(?P<id>\d+)$`, Template: server.URL,
+		}},
+		"https://example.com/42",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(documents) != 2 {
+		t.Fatalf("document count = %d, want channel metadata plus one limited item", len(documents))
+	}
+	channel := documents[0]
+	if channel.Title != "派生 RSS 频道信息" || channel.SourceURL != "https://example.com/channel" {
+		t.Errorf("channel document = %#v", channel)
+	}
+	for _, want := range []string{"频道标题：测试&频道", "频道描述：关注 AI 的每日动态。"} {
+		if !strings.Contains(channel.Content, want) {
+			t.Errorf("channel content = %q, missing %q", channel.Content, want)
+		}
+	}
+	if documents[1].Title != "第一篇" || documents[1].Content != "第一篇正文" {
+		t.Errorf("item document = %#v", documents[1])
+	}
+}
+
+func TestFetchDerivedRSSDoesNotUseChannelMetadataWithoutUsableItems(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/rss+xml")
+		_, _ = w.Write([]byte(`<?xml version="1.0"?><rss version="2.0"><channel>
+<title>只有频道信息</title><description>不能代替正文</description>
+<item><title>空内容</title></item></channel></rss>`))
+	}))
+	defer server.Close()
+
+	worker := ResolveContentWorker{Config: &config.Config{
+		Defaults: config.DefaultsConfig{Limits: config.LimitsConfig{MaxDocumentsPerItem: 1}},
+	}}
+	documents, err := worker.fetchDerivedRSS(
+		context.Background(),
+		config.SourceConfig{},
+		config.ContentConfig{URL: config.URLMappingConfig{From: "item.link", Regex: `.*`, Template: server.URL}},
+		"https://example.com/42",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(documents) != 0 {
+		t.Fatalf("documents = %#v, want none", documents)
+	}
+}
+
+func TestDerivedRSSChannelDocumentFallsBackToFeedURL(t *testing.T) {
+	document, ok := derivedRSSChannelDocument(&gofeed.Feed{Title: "测试频道"}, "https://example.com/derived.xml")
+	if !ok {
+		t.Fatal("derivedRSSChannelDocument() did not return channel metadata")
+	}
+	if document.SourceURL != "https://example.com/derived.xml" {
+		t.Fatalf("channel source URL = %q, want derived feed URL", document.SourceURL)
 	}
 }
 
