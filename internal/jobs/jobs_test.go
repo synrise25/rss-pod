@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mmcdole/gofeed"
+
 	"github.com/synrise25/rss-pod/internal/config"
 )
 
@@ -162,6 +164,16 @@ func TestFetchDerivedRSSDoesNotUseChannelMetadataWithoutUsableItems(t *testing.T
 	}
 	if len(documents) != 0 {
 		t.Fatalf("documents = %#v, want none", documents)
+	}
+}
+
+func TestDerivedRSSChannelDocumentFallsBackToFeedURL(t *testing.T) {
+	document, ok := derivedRSSChannelDocument(&gofeed.Feed{Title: "测试频道"}, "https://example.com/derived.xml")
+	if !ok {
+		t.Fatal("derivedRSSChannelDocument() did not return channel metadata")
+	}
+	if document.SourceURL != "https://example.com/derived.xml" {
+		t.Fatalf("channel source URL = %q, want derived feed URL", document.SourceURL)
 	}
 }
 
