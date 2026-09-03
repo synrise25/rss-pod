@@ -252,7 +252,7 @@ func renderDocuments(documents []llmDocument) (string, renderDocumentsStats) {
 	var builder strings.Builder
 	stats := renderDocumentsStats{LimitRunes: maxRunes}
 	for _, document := range documents {
-		header := fmt.Sprintf("\n\n## 资料 %d\n标题：%s\n来源：%s\n\n", document.Position+1, document.Title, document.SourceURL)
+		header := renderDocumentHeader(document)
 		stats.InputRunes += utf8.RuneCountInString(header) + utf8.RuneCountInString(document.Content)
 	}
 	writtenRunes := 0
@@ -263,7 +263,7 @@ func renderDocuments(documents []llmDocument) (string, renderDocumentsStats) {
 			break
 		}
 		stats.IncludedDocuments++
-		header := fmt.Sprintf("\n\n## 资料 %d\n标题：%s\n来源：%s\n\n", document.Position+1, document.Title, document.SourceURL)
+		header := renderDocumentHeader(document)
 		written, truncated := writeRunes(&builder, header, remaining)
 		writtenRunes += written
 		if truncated {
@@ -278,6 +278,17 @@ func renderDocuments(documents []llmDocument) (string, renderDocumentsStats) {
 		}
 	}
 	return strings.TrimSpace(builder.String()), stats
+}
+
+func renderDocumentHeader(document llmDocument) string {
+	header := fmt.Sprintf("\n\n## 资料 %d\n", document.Position+1)
+	if title := strings.TrimSpace(document.Title); title != "" {
+		header += "标题：" + title + "\n"
+	}
+	if sourceURL := strings.TrimSpace(document.SourceURL); sourceURL != "" {
+		header += "来源：" + sourceURL + "\n"
+	}
+	return header + "\n"
 }
 
 func writeRunes(builder *strings.Builder, value string, limit int) (int, bool) {

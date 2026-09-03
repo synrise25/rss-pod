@@ -12,8 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mmcdole/gofeed"
-
 	"github.com/synrise25/rss-pod/internal/config"
 )
 
@@ -96,7 +94,7 @@ func TestContentHTTPClientUsesOnlyExplicitProxy(t *testing.T) {
 	}
 }
 
-func TestFetchDerivedRSSIncludesChannelMetadataBeforeLimitedItems(t *testing.T) {
+func TestFetchDerivedRSSCompactsMetadataAndLimitedItems(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/rss+xml")
 		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
@@ -104,6 +102,7 @@ func TestFetchDerivedRSSIncludesChannelMetadataBeforeLimitedItems(t *testing.T) 
   <title>测试&amp;频道</title>
   <link>https://example.com/channel</link>
   <description><![CDATA[<p>关注 <strong>AI</strong> 的每日动态。</p>]]></description>
+  <item><title>空内容</title><link>https://example.com/empty</link></item>
   <item><title>第一篇</title><link>https://example.com/1</link><description>第一篇正文</description></item>
   <item><title>第二篇</title><link>https://example.com/2</link><description>第二篇正文</description></item>
 </channel></rss>`))
@@ -128,15 +127,10 @@ func TestFetchDerivedRSSIncludesChannelMetadataBeforeLimitedItems(t *testing.T) 
 		t.Fatalf("document count = %d, want channel metadata plus one limited item", len(documents))
 	}
 	channel := documents[0]
-	if channel.Title != "派生 RSS 频道信息" || channel.SourceURL != "https://example.com/channel" {
+	if channel.Title != "测试&频道" || channel.SourceURL != "" || channel.Content != "关注 AI 的每日动态。" {
 		t.Errorf("channel document = %#v", channel)
 	}
-	for _, want := range []string{"频道标题：测试&频道", "频道描述：关注 AI 的每日动态。"} {
-		if !strings.Contains(channel.Content, want) {
-			t.Errorf("channel content = %q, missing %q", channel.Content, want)
-		}
-	}
-	if documents[1].Title != "第一篇" || documents[1].Content != "第一篇正文" {
+	if documents[1].Title != "" || documents[1].SourceURL != "" || documents[1].Content != "第一篇正文" {
 		t.Errorf("item document = %#v", documents[1])
 	}
 }
@@ -167,13 +161,51 @@ func TestFetchDerivedRSSDoesNotUseChannelMetadataWithoutUsableItems(t *testing.T
 	}
 }
 
-func TestDerivedRSSChannelDocumentFallsBackToFeedURL(t *testing.T) {
-	document, ok := derivedRSSChannelDocument(&gofeed.Feed{Title: "测试频道"}, "https://example.com/derived.xml")
-	if !ok {
-		t.Fatal("derivedRSSChannelDocument() did not return channel metadata")
+func TestFetchDerivedRSSCompactsAtomFeed(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/atom+xml")
+		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>讨论主题</title>
+  <subtitle type="html">&lt;p&gt;社区背景&lt;/p&gt;</subtitle>
+  <link rel="alternate" href="https://example.com/thread"/>
+  <entry>
+    <id>comment-1</id><title>作者甲 on 讨论主题</title>
+    <link href="https://example.com/thread/1"/>
+    <content type="html">&lt;p&gt;第一条评论&lt;/p&gt;</content>
+  </entry>
+  <entry>
+    <id>comment-2</id><title>作者乙 on 讨论主题</title>
+    <link href="https://example.com/thread/2"/>
+    <summary type="html">&lt;p&gt;第二条摘要&lt;/p&gt;</summary>
+  </entry>
+</feed>`))
+	}))
+	defer server.Close()
+
+	worker := ResolveContentWorker{Config: &config.Config{
+		Defaults: config.DefaultsConfig{Limits: config.LimitsConfig{MaxDocumentsPerItem: 2}},
+	}}
+	documents, err := worker.fetchDerivedRSS(
+		context.Background(),
+		config.SourceConfig{},
+		config.ContentConfig{URL: config.URLMappingConfig{From: "item.link", Regex: `.*`, Template: server.URL}},
+		"https://example.com/thread",
+	)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if document.SourceURL != "https://example.com/derived.xml" {
-		t.Fatalf("channel source URL = %q, want derived feed URL", document.SourceURL)
+	if len(documents) != 3 {
+		t.Fatalf("document count = %d, want feed metadata plus two entries", len(documents))
+	}
+	if got := documents[0]; got.Title != "讨论主题" || got.SourceURL != "" || got.Content != "社区背景" {
+		t.Errorf("feed document = %#v", got)
+	}
+	for index, want := range []string{"第一条评论", "第二条摘要"} {
+		got := documents[index+1]
+		if got.Title != "" || got.SourceURL != "" || got.Content != want {
+			t.Errorf("entry document %d = %#v, want content %q without title/source", index, got, want)
+		}
 	}
 }
 
@@ -555,6 +587,27 @@ func TestRenderDocumentsReportsTruncation(t *testing.T) {
 	}
 	if got := len([]rune(content)); got > stats.LimitRunes {
 		t.Fatalf("rendered runes = %d, limit = %d", got, stats.LimitRunes)
+	}
+}
+
+func TestRenderDocumentsOmitsEmptyMetadataLines(t *testing.T) {
+	documents := []llmDocument{{Position: 0, Content: "正文"}}
+	content, stats := renderDocuments(documents)
+	if want := "## 资料 1\n\n正文"; content != want {
+		t.Fatalf("renderDocuments() = %q, want %q", content, want)
+	}
+	if stats.Truncated || stats.IncludedDocuments != 1 {
+		t.Fatalf("stats = %#v", stats)
+	}
+}
+
+func TestRenderDocumentsTrimsMetadata(t *testing.T) {
+	documents := []llmDocument{{
+		Position: 0, Title: "  标题\n", SourceURL: " https://example.com/article \t", Content: "正文",
+	}}
+	content, _ := renderDocuments(documents)
+	if want := "## 资料 1\n标题：标题\n来源：https://example.com/article\n\n正文"; content != want {
+		t.Fatalf("renderDocuments() = %q, want %q", content, want)
 	}
 }
 

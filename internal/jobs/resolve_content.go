@@ -209,11 +209,14 @@ func (w *ResolveContentWorker) fetchDerivedRSS(ctx context.Context, source confi
 	parser.Client = client
 	feed, err := parser.ParseURLWithContext(feedURL, ctx)
 	if err != nil {
-		return nil, fmt.Errorf("fetch derived RSS: %w", err)
+		return nil, fmt.Errorf("fetch derived feed: %w", err)
 	}
-	limit := min(len(feed.Items), w.Config.EffectiveLimits(source).MaxDocumentsPerItem)
-	documents := make([]resolvedDocument, 0, limit+1)
-	for _, item := range feed.Items[:limit] {
+	limit := w.Config.EffectiveLimits(source).MaxDocumentsPerItem
+	documents := make([]resolvedDocument, 0, min(len(feed.Items), limit)+1)
+	for _, item := range feed.Items {
+		if len(documents) == limit {
+			break
+		}
 		content := item.Content
 		if strings.TrimSpace(content) == "" {
 			content = item.Description
@@ -222,40 +225,27 @@ func (w *ResolveContentWorker) fetchDerivedRSS(ctx context.Context, source confi
 		if strings.TrimSpace(content) == "" {
 			continue
 		}
-		documents = append(documents, resolvedDocument{Title: item.Title, SourceURL: item.Link, Content: content})
+		documents = append(documents, resolvedDocument{Content: content})
 	}
 	if len(documents) > 0 {
-		if channel, ok := derivedRSSChannelDocument(feed, feedURL); ok {
+		if metadata, ok := derivedFeedMetadataDocument(feed); ok {
 			documents = append(documents, resolvedDocument{})
 			copy(documents[1:], documents[:len(documents)-1])
-			documents[0] = channel
+			documents[0] = metadata
 		}
 	}
 	return documents, nil
 }
 
-func derivedRSSChannelDocument(feed *gofeed.Feed, feedURL string) (resolvedDocument, bool) {
+func derivedFeedMetadataDocument(feed *gofeed.Feed) (resolvedDocument, bool) {
 	title := htmlToText(feed.Title)
 	description := htmlToText(feed.Description)
 	if title == "" && description == "" {
 		return resolvedDocument{}, false
 	}
-
-	lines := make([]string, 0, 2)
-	if title != "" {
-		lines = append(lines, "频道标题："+title)
-	}
-	if description != "" {
-		lines = append(lines, "频道描述："+description)
-	}
-	sourceURL := strings.TrimSpace(feed.Link)
-	if sourceURL == "" {
-		sourceURL = feedURL
-	}
 	return resolvedDocument{
-		Title:     "派生 RSS 频道信息",
-		SourceURL: sourceURL,
-		Content:   strings.Join(lines, "\n"),
+		Title:   title,
+		Content: description,
 	}, true
 }
 
