@@ -198,8 +198,10 @@ async function loadNotice() {
     const noticeID =
       normalizeNoticeID(response.headers.get("X-Notice-ID") || response.headers.get("ETag")) ||
       (await fingerprintNotice(html));
-    if (dismissedNotice && dismissedNotice === noticeID) return;
-    if (dismissedNotice) clearNoticeDismissal();
+    if (dismissedNotice) {
+      if (!noticeID || dismissedNotice === noticeID) return;
+      clearNoticeDismissal();
+    }
     elements.noticeRegion.dataset.noticeId = noticeID;
     elements.noticeContent.innerHTML = html;
     elements.noticeRegion.hidden = false;
