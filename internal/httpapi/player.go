@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"log/slog"
 	"net/http"
@@ -52,7 +54,7 @@ func (s *playerServer) listSources(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"sources": s.sources})
 }
 
-func (s *playerServer) notice(w http.ResponseWriter, _ *http.Request) {
+func (s *playerServer) notice(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if s.noticeFile == "" {
 		w.WriteHeader(http.StatusNoContent)
@@ -90,6 +92,14 @@ func (s *playerServer) notice(w http.ResponseWriter, _ *http.Request) {
 	if err := noticeMarkdown.Convert(content, &rendered); err != nil {
 		slog.Error("render player notice", "error", err)
 		http.Error(w, "player notice unavailable", http.StatusInternalServerError)
+		return
+	}
+
+	noticeHash := sha256.Sum256(rendered.Bytes())
+	etag := `"` + hex.EncodeToString(noticeHash[:]) + `"`
+	w.Header().Set("ETag", etag)
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
 		return
 	}
 

@@ -1,5 +1,6 @@
 const SPEED_KEY = "rss-pod.player-speed";
 const RESUME_KEY = "rss-pod.resume-state";
+const DISMISSED_NOTICE_KEY = "rss-pod.dismissed-notice";
 const DEMO_AUDIO = "/demo.mp3";
 const MEDIA_ARTWORK = [
   { src: "/icons/favicon.png", sizes: "64x64", type: "image/png" },
@@ -16,6 +17,7 @@ const copy = {
     githubLabel: "View project on GitHub",
     dateTabsLabel: "Choose a date",
     noticeLabel: "Notice",
+    dismissNotice: "Dismiss notice",
     sourceSectionLabel: "Filter by source",
     sourceFilterLabel: "Feeds",
     episodeRegionLabel: "Podcast episodes",
@@ -52,6 +54,7 @@ const copy = {
     githubLabel: "在 GitHub 上查看项目",
     dateTabsLabel: "选择日期",
     noticeLabel: "通知",
+    dismissNotice: "关闭通知",
     sourceSectionLabel: "按来源筛选",
     sourceFilterLabel: "内容来源",
     episodeRegionLabel: "播客列表",
@@ -120,6 +123,7 @@ const elements = {
   dateTabs: document.querySelector("#date-tabs"),
   noticeRegion: document.querySelector("#notice-region"),
   noticeContent: document.querySelector("#notice-content"),
+  noticeDismiss: document.querySelector("#notice-dismiss"),
   sourceFilterSection: document.querySelector("#source-filter-section"),
   sourceFilterLabel: document.querySelector("#source-filter-label"),
   sourceFilters: document.querySelector("#source-filters"),
@@ -166,25 +170,55 @@ document.addEventListener("visibilitychange", () => {
 });
 
 bindPlayerEvents();
+bindNoticeEvents();
 renderSpeed();
 loadNotice();
 loadPlayer();
 
 async function loadNotice() {
   try {
+    const dismissedNotice = readStoredString(DISMISSED_NOTICE_KEY);
+    const headers = { Accept: "text/html" };
+    if (dismissedNotice) headers["If-None-Match"] = dismissedNotice;
     const response = await fetch("/api/v1/player/notice", {
       cache: "no-store",
-      headers: { Accept: "text/html" },
+      headers,
     });
-    if (response.status === 204) return;
+    if (response.status === 304) return;
+    if (response.status === 204) {
+      clearNoticeDismissal();
+      return;
+    }
     if (!response.ok) throw new Error(`notice API returned ${response.status}`);
     const html = await response.text();
-    if (!html.trim()) return;
+    if (!html.trim()) {
+      clearNoticeDismissal();
+      return;
+    }
+    const noticeID = response.headers.get("ETag") || "";
+    if (dismissedNotice && dismissedNotice !== noticeID) clearNoticeDismissal();
+    elements.noticeRegion.dataset.noticeId = noticeID;
     elements.noticeContent.innerHTML = html;
     elements.noticeRegion.hidden = false;
   } catch (error) {
     console.error("load notice", error);
   }
+}
+
+function bindNoticeEvents() {
+  elements.noticeDismiss.addEventListener("click", () => {
+    const noticeID = elements.noticeRegion.dataset.noticeId;
+    if (noticeID) writeStorage(DISMISSED_NOTICE_KEY, noticeID);
+    elements.noticeRegion.hidden = true;
+    elements.dateTabs.querySelector(".date-tab")?.focus();
+  });
+}
+
+function clearNoticeDismissal() {
+  elements.noticeRegion.hidden = true;
+  elements.noticeContent.replaceChildren();
+  delete elements.noticeRegion.dataset.noticeId;
+  removeStorage(DISMISSED_NOTICE_KEY);
 }
 
 async function loadPlayer() {
@@ -567,6 +601,8 @@ function applyLocale() {
   elements.githubLink.title = copy.githubLabel;
   elements.dateTabs.setAttribute("aria-label", copy.dateTabsLabel);
   elements.noticeRegion.setAttribute("aria-label", copy.noticeLabel);
+  elements.noticeDismiss.setAttribute("aria-label", copy.dismissNotice);
+  elements.noticeDismiss.title = copy.dismissNotice;
   elements.sourceFilterSection.setAttribute("aria-label", copy.sourceSectionLabel);
   elements.sourceFilterLabel.textContent = copy.sourceFilterLabel;
   elements.episodeRegion.setAttribute("aria-label", copy.episodeRegionLabel);
@@ -707,11 +743,27 @@ function readStoredNumber(key, fallback) {
   }
 }
 
+function readStoredString(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
 function writeStorage(key, value) {
   try {
     localStorage.setItem(key, value);
   } catch {
     // Playback remains functional in browsers that disable storage.
+  }
+}
+
+function removeStorage(key) {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // Stale preferences are harmless in browsers that disable storage.
   }
 }
 
