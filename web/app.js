@@ -177,9 +177,9 @@ loadPlayer();
 
 async function loadNotice() {
   try {
-    const dismissedNotice = readStoredString(DISMISSED_NOTICE_KEY);
+    const dismissedNotice = normalizeNoticeID(readStoredString(DISMISSED_NOTICE_KEY));
     const headers = { Accept: "text/html" };
-    if (dismissedNotice) headers["If-None-Match"] = dismissedNotice;
+    if (dismissedNotice) headers["If-None-Match"] = `"${dismissedNotice}"`;
     const response = await fetch("/api/v1/player/notice", {
       cache: "no-store",
       headers,
@@ -195,8 +195,13 @@ async function loadNotice() {
       clearNoticeDismissal();
       return;
     }
-    const noticeID = response.headers.get("ETag") || "";
-    if (dismissedNotice && dismissedNotice !== noticeID) clearNoticeDismissal();
+    const noticeID =
+      normalizeNoticeID(response.headers.get("X-Notice-ID") || response.headers.get("ETag")) ||
+      (await fingerprintNotice(html));
+    if (dismissedNotice) {
+      if (dismissedNotice === noticeID) return;
+      clearNoticeDismissal();
+    }
     elements.noticeRegion.dataset.noticeId = noticeID;
     elements.noticeContent.innerHTML = html;
     elements.noticeRegion.hidden = false;
@@ -766,6 +771,36 @@ function removeStorage(key) {
   } catch {
     // Stale preferences are harmless in browsers that disable storage.
   }
+}
+
+function normalizeNoticeID(value) {
+  const normalized = (value || "").trim().replace(/^W\//, "");
+  if (normalized.startsWith('"') && normalized.endsWith('"')) {
+    return normalized.slice(1, -1);
+  }
+  return normalized;
+}
+
+async function fingerprintNotice(html) {
+  if (globalThis.crypto?.subtle && typeof TextEncoder !== "undefined") {
+    try {
+      const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(html));
+      return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+    } catch {
+      // Fall through to a deterministic non-cryptographic fingerprint.
+    }
+  }
+
+  let first = 0x811c9dc5;
+  let second = 0x9e3779b9;
+  for (let index = 0; index < html.length; index += 1) {
+    const codeUnit = html.charCodeAt(index);
+    first = Math.imul(first ^ codeUnit, 0x01000193);
+    second = Math.imul(second ^ codeUnit, 0x85ebca6b);
+  }
+  return `fallback-${(first >>> 0).toString(16).padStart(8, "0")}${(second >>> 0)
+    .toString(16)
+    .padStart(8, "0")}-${html.length}`;
 }
 
 function updateMediaSession(episode) {

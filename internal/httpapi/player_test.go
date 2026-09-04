@@ -66,6 +66,10 @@ func TestPlayerNoticeRendersMarkdownAndReloadsFile(t *testing.T) {
 	if firstETag == "" {
 		t.Fatal("ETag is empty")
 	}
+	firstNoticeID := response.Header().Get("X-Notice-ID")
+	if firstNoticeID == "" || firstETag != `"`+firstNoticeID+`"` {
+		t.Fatalf("X-Notice-ID = %q, ETag = %q; want matching validators", firstNoticeID, firstETag)
+	}
 
 	for name, ifNoneMatch := range map[string]string{
 		"exact":    firstETag,
@@ -94,6 +98,9 @@ func TestPlayerNoticeRendersMarkdownAndReloadsFile(t *testing.T) {
 	}
 	if updatedETag := response.Header().Get("ETag"); updatedETag == "" || updatedETag == firstETag {
 		t.Fatalf("updated ETag = %q, want a new non-empty value", updatedETag)
+	}
+	if updatedNoticeID := response.Header().Get("X-Notice-ID"); updatedNoticeID == "" || updatedNoticeID == firstNoticeID {
+		t.Fatalf("updated X-Notice-ID = %q, want a new non-empty value", updatedNoticeID)
 	}
 }
 
