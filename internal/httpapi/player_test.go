@@ -26,6 +26,18 @@ func TestPlayerNoticeDisabled(t *testing.T) {
 	}
 }
 
+func TestPlayerNoticeMissingFile(t *testing.T) {
+	t.Parallel()
+
+	response := httptest.NewRecorder()
+	server := &playerServer{noticeFile: filepath.Join(t.TempDir(), "missing.md")}
+	server.notice(response, httptest.NewRequest(http.MethodGet, "/api/v1/player/notice", nil))
+
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", response.Code)
+	}
+}
+
 func TestPlayerNoticeRendersMarkdownAndReloadsFile(t *testing.T) {
 	t.Parallel()
 

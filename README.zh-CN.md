@@ -122,10 +122,10 @@ runtime:
     notice_file: notice.md
 ```
 
-`notice_file` 留空时不显示通知。服务会在每次页面载入时重新读取文件，因此修改
-`notice.md` 后刷新页面即可看到新内容，不需要重新构建镜像。支持 CommonMark 与表格、
-删除线、任务列表等 GitHub Flavored Markdown 语法；出于安全考虑，Markdown 中的原始
-HTML 不会执行。通知文件最大为 64 KiB。
+`notice_file` 留空、配置的文件不存在，或文件内容为空时，都不显示通知。服务会在
+每次页面载入时重新读取文件，因此修改 `notice.md` 后刷新页面即可看到新内容，
+不需要重新构建镜像。支持 CommonMark 与表格、删除线、任务列表等 GitHub Flavored
+Markdown 语法；出于安全考虑，Markdown 中的原始 HTML 不会执行。通知文件最大为 64 KiB。
 
 主要命令：
 

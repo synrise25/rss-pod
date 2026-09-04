@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"bytes"
-	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -62,9 +61,11 @@ func (s *playerServer) notice(w http.ResponseWriter, _ *http.Request) {
 
 	file, err := os.Open(s.noticeFile)
 	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			slog.Error("open player notice", "error", err)
+		if os.IsNotExist(err) {
+			w.WriteHeader(http.StatusNoContent)
+			return
 		}
+		slog.Error("open player notice", "error", err)
 		http.Error(w, "player notice unavailable", http.StatusInternalServerError)
 		return
 	}

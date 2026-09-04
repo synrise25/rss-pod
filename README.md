@@ -136,11 +136,12 @@ runtime:
     notice_file: notice.md
 ```
 
-The notice stays hidden when `notice_file` is empty. The service reads the file
-on every page load, so edits to `notice.md` appear after a refresh without
-rebuilding the image. CommonMark and GitHub Flavored Markdown features such as
-tables, strikethrough, and task lists are supported. Raw HTML in Markdown is not
-executed for security. Notice files are limited to 64 KiB.
+The notice stays hidden when `notice_file` is empty, the configured file is
+missing, or the file is empty. The service reads the file on every page load, so
+edits to `notice.md` appear after a refresh without rebuilding the image.
+CommonMark and GitHub Flavored Markdown features such as tables, strikethrough,
+and task lists are supported. Raw HTML in Markdown is not executed for security.
+Notice files are limited to 64 KiB.
 
 The main commands are:
 
