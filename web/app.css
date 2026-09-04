@@ -123,11 +123,15 @@ input:focus-visible {
   background: var(--surface-blue-strong);
 }
 
-.notice-dismiss span {
+.notice-dismiss svg {
   display: block;
-  font-size: 24px;
-  font-weight: 400;
-  line-height: 1;
+  width: 22px;
+  height: 22px;
+  overflow: visible;
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 2.6;
+  stroke-linecap: round;
 }
 
 .notice-content > :first-child {

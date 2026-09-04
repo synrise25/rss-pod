@@ -96,7 +96,9 @@ func (s *playerServer) notice(w http.ResponseWriter, r *http.Request) {
 	}
 
 	noticeHash := sha256.Sum256(rendered.Bytes())
-	etag := `"` + hex.EncodeToString(noticeHash[:]) + `"`
+	noticeID := hex.EncodeToString(noticeHash[:])
+	etag := `"` + noticeID + `"`
+	w.Header().Set("X-Notice-ID", noticeID)
 	w.Header().Set("ETag", etag)
 	if matchesETag(r.Header.Values("If-None-Match"), etag) {
 		w.WriteHeader(http.StatusNotModified)

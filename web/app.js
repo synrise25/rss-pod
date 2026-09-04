@@ -177,9 +177,9 @@ loadPlayer();
 
 async function loadNotice() {
   try {
-    const dismissedNotice = readStoredString(DISMISSED_NOTICE_KEY);
+    const dismissedNotice = normalizeNoticeID(readStoredString(DISMISSED_NOTICE_KEY));
     const headers = { Accept: "text/html" };
-    if (dismissedNotice) headers["If-None-Match"] = dismissedNotice;
+    if (dismissedNotice) headers["If-None-Match"] = `"${dismissedNotice}"`;
     const response = await fetch("/api/v1/player/notice", {
       cache: "no-store",
       headers,
@@ -195,8 +195,11 @@ async function loadNotice() {
       clearNoticeDismissal();
       return;
     }
-    const noticeID = response.headers.get("ETag") || "";
-    if (dismissedNotice && dismissedNotice !== noticeID) clearNoticeDismissal();
+    const noticeID =
+      normalizeNoticeID(response.headers.get("X-Notice-ID") || response.headers.get("ETag")) ||
+      (await fingerprintNotice(html));
+    if (dismissedNotice && dismissedNotice === noticeID) return;
+    if (dismissedNotice) clearNoticeDismissal();
     elements.noticeRegion.dataset.noticeId = noticeID;
     elements.noticeContent.innerHTML = html;
     elements.noticeRegion.hidden = false;
@@ -765,6 +768,24 @@ function removeStorage(key) {
     localStorage.removeItem(key);
   } catch {
     // Stale preferences are harmless in browsers that disable storage.
+  }
+}
+
+function normalizeNoticeID(value) {
+  const normalized = (value || "").trim().replace(/^W\//, "");
+  if (normalized.startsWith('"') && normalized.endsWith('"')) {
+    return normalized.slice(1, -1);
+  }
+  return normalized;
+}
+
+async function fingerprintNotice(html) {
+  if (!globalThis.crypto?.subtle || typeof TextEncoder === "undefined") return "";
+  try {
+    const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(html));
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  } catch {
+    return "";
   }
 }
 
