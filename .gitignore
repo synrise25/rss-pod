@@ -2,4 +2,5 @@
 .env
 .private-context/
 config.yaml
+notice.md
 .DS_Store

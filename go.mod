@@ -12,6 +12,7 @@ require (
 	github.com/riverqueue/river v0.44.0
 	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.44.0
 	github.com/robfig/cron/v3 v3.0.1
+	github.com/yuin/goldmark v1.8.5
 	golang.org/x/net v0.58.0
 	gopkg.in/yaml.v3 v3.0.1
 )
