@@ -67,12 +67,21 @@ func TestPlayerNoticeRendersMarkdownAndReloadsFile(t *testing.T) {
 		t.Fatal("ETag is empty")
 	}
 
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/player/notice", nil)
-	request.Header.Set("If-None-Match", firstETag)
-	response = httptest.NewRecorder()
-	server.notice(response, request)
-	if response.Code != http.StatusNotModified || response.Body.Len() != 0 {
-		t.Fatalf("matching ETag response = %d, %q; want 304 with empty body", response.Code, response.Body.String())
+	for name, ifNoneMatch := range map[string]string{
+		"exact":    firstETag,
+		"weak":     "W/" + firstETag,
+		"list":     `"unrelated", W/` + firstETag,
+		"wildcard": "*",
+	} {
+		t.Run(name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, "/api/v1/player/notice", nil)
+			request.Header.Set("If-None-Match", ifNoneMatch)
+			response := httptest.NewRecorder()
+			server.notice(response, request)
+			if response.Code != http.StatusNotModified || response.Body.Len() != 0 {
+				t.Fatalf("matching ETag response = %d, %q; want 304 with empty body", response.Code, response.Body.String())
+			}
+		})
 	}
 
 	if err := os.WriteFile(path, []byte("Updated"), 0o600); err != nil {

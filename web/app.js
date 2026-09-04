@@ -210,7 +210,8 @@ function bindNoticeEvents() {
     const noticeID = elements.noticeRegion.dataset.noticeId;
     if (noticeID) writeStorage(DISMISSED_NOTICE_KEY, noticeID);
     elements.noticeRegion.hidden = true;
-    elements.dateTabs.querySelector(".date-tab")?.focus();
+    const focusTarget = elements.dateTabs.querySelector(".date-tab") || elements.dateTabs;
+    focusTarget.focus();
   });
 }
 

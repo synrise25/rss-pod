@@ -145,10 +145,10 @@ Notice files are limited to 64 KiB.
 
 The notice can be hidden with its dismiss button. The player stores a fingerprint
 of the notice content in browser storage for the current site, so the same notice
-stays hidden on later visits. An updated notice, a notice removed and later
-restored, or cleared site data makes it visible again. This preference is local
-to each browser and device. If browser storage is unavailable, dismissal lasts
-only for the current page.
+stays hidden on later visits. An updated notice, cleared site data, or a page load
+that observes the notice as removed or empty clears the dismissal. This preference
+is local to each browser and device. If browser storage is unavailable, dismissal
+lasts only for the current page.
 
 The main commands are:
 

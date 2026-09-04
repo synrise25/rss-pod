@@ -98,7 +98,7 @@ func (s *playerServer) notice(w http.ResponseWriter, r *http.Request) {
 	noticeHash := sha256.Sum256(rendered.Bytes())
 	etag := `"` + hex.EncodeToString(noticeHash[:]) + `"`
 	w.Header().Set("ETag", etag)
-	if r.Header.Get("If-None-Match") == etag {
+	if matchesETag(r.Header.Values("If-None-Match"), etag) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
@@ -106,6 +106,19 @@ func (s *playerServer) notice(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(rendered.Bytes())
+}
+
+func matchesETag(headerValues []string, current string) bool {
+	current = strings.TrimPrefix(current, "W/")
+	for _, headerValue := range headerValues {
+		for _, candidate := range strings.Split(headerValue, ",") {
+			candidate = strings.TrimSpace(candidate)
+			if candidate == "*" || strings.TrimPrefix(candidate, "W/") == current {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 type playerEpisode struct {
