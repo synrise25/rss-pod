@@ -62,6 +62,27 @@ func TestPlayerNoticeRendersMarkdownAndReloadsFile(t *testing.T) {
 	if contentType := response.Header().Get("Content-Type"); contentType != "text/html; charset=utf-8" {
 		t.Fatalf("Content-Type = %q", contentType)
 	}
+	firstETag := response.Header().Get("ETag")
+	if firstETag == "" {
+		t.Fatal("ETag is empty")
+	}
+
+	for name, ifNoneMatch := range map[string]string{
+		"exact":    firstETag,
+		"weak":     "W/" + firstETag,
+		"list":     `"unrelated", W/` + firstETag,
+		"wildcard": "*",
+	} {
+		t.Run(name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, "/api/v1/player/notice", nil)
+			request.Header.Set("If-None-Match", ifNoneMatch)
+			response := httptest.NewRecorder()
+			server.notice(response, request)
+			if response.Code != http.StatusNotModified || response.Body.Len() != 0 {
+				t.Fatalf("matching ETag response = %d, %q; want 304 with empty body", response.Code, response.Body.String())
+			}
+		})
+	}
 
 	if err := os.WriteFile(path, []byte("Updated"), 0o600); err != nil {
 		t.Fatal(err)
@@ -70,6 +91,9 @@ func TestPlayerNoticeRendersMarkdownAndReloadsFile(t *testing.T) {
 	server.notice(response, httptest.NewRequest(http.MethodGet, "/api/v1/player/notice", nil))
 	if !strings.Contains(response.Body.String(), "Updated") {
 		t.Fatalf("updated file was not read: %s", response.Body.String())
+	}
+	if updatedETag := response.Header().Get("ETag"); updatedETag == "" || updatedETag == firstETag {
+		t.Fatalf("updated ETag = %q, want a new non-empty value", updatedETag)
 	}
 }
 

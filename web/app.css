@@ -71,6 +71,7 @@ input:focus-visible {
 }
 
 .notice-region {
+  position: relative;
   margin-bottom: 10px;
 }
 
@@ -80,7 +81,7 @@ input:focus-visible {
 
 .notice-content {
   max-height: min(160px, 22vh);
-  padding: 10px 14px;
+  padding: 10px 52px 10px 14px;
   border: 1px solid rgb(142 194 241 / 48%);
   border-radius: 12px;
   background: linear-gradient(105deg, rgb(239 248 255 / 94%), rgb(225 244 255 / 78%));
@@ -90,6 +91,43 @@ input:focus-visible {
   overflow-y: auto;
   overflow-wrap: anywhere;
   scrollbar-color: var(--line-strong) transparent;
+}
+
+.notice-dismiss {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  right: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid rgb(142 194 241 / 52%);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 62%);
+  color: var(--muted);
+  cursor: pointer;
+  line-height: 1;
+  transform: translateY(-50%);
+}
+
+.notice-dismiss:hover {
+  border-color: rgb(117 175 237 / 72%);
+  background: rgb(255 255 255 / 88%);
+  color: var(--blue-pressed);
+}
+
+.notice-dismiss:active {
+  background: var(--surface-blue-strong);
+}
+
+.notice-dismiss span {
+  display: block;
+  font-size: 24px;
+  font-weight: 400;
+  line-height: 1;
 }
 
 .notice-content > :first-child {
@@ -1020,8 +1058,12 @@ input:focus-visible {
   }
 
   .notice-content {
-    padding: 8px 10px;
+    padding: 8px 46px 8px 10px;
     font-size: 14px;
+  }
+
+  .notice-dismiss {
+    right: 5px;
   }
 
   .source-filter-label {

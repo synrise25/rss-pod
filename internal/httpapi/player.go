@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"log/slog"
 	"net/http"
@@ -52,7 +54,7 @@ func (s *playerServer) listSources(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"sources": s.sources})
 }
 
-func (s *playerServer) notice(w http.ResponseWriter, _ *http.Request) {
+func (s *playerServer) notice(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if s.noticeFile == "" {
 		w.WriteHeader(http.StatusNoContent)
@@ -93,9 +95,30 @@ func (s *playerServer) notice(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 
+	noticeHash := sha256.Sum256(rendered.Bytes())
+	etag := `"` + hex.EncodeToString(noticeHash[:]) + `"`
+	w.Header().Set("ETag", etag)
+	if matchesETag(r.Header.Values("If-None-Match"), etag) {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(rendered.Bytes())
+}
+
+func matchesETag(headerValues []string, current string) bool {
+	current = strings.TrimPrefix(current, "W/")
+	for _, headerValue := range headerValues {
+		for _, candidate := range strings.Split(headerValue, ",") {
+			candidate = strings.TrimSpace(candidate)
+			if candidate == "*" || strings.TrimPrefix(candidate, "W/") == current {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 type playerEpisode struct {
