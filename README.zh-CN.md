@@ -106,6 +106,27 @@ go run ./cmd/rss-pod run
 公共 listener 上。播放器会在 `/` 根据浏览器首选语言跳转到稳定的英文地址 `/en` 或
 简体中文地址 `/zh-cn`；页面语言切换会保留当前查询参数。
 
+### 播放器通知
+
+播放器可以在页面标题与日期标签之间显示一段 Markdown 通知。先复制示例并按需修改：
+
+```bash
+cp notice.example.md notice.md
+```
+
+再在 `config.yaml` 中设置文件路径：
+
+```yaml
+runtime:
+  http:
+    notice_file: notice.md
+```
+
+`notice_file` 留空时不显示通知。服务会在每次页面载入时重新读取文件，因此修改
+`notice.md` 后刷新页面即可看到新内容，不需要重新构建镜像。支持 CommonMark 与表格、
+删除线、任务列表等 GitHub Flavored Markdown 语法；出于安全考虑，Markdown 中的原始
+HTML 不会执行。通知文件最大为 64 KiB。
+
 主要命令：
 
 | 命令 | 用途 |
@@ -142,6 +163,12 @@ docker run --detach \
   rss-pod:dev run --config /app/config.yaml
 ```
 
+配置了 `notice_file: notice.md` 时，在启动命令中再增加这一项只读挂载：
+
+```bash
+--volume "$PWD/notice.md:/app/notice.md:ro" \
+```
+
 如果维护了部署专用 Prompt，也可以把本地 `prompts/` 只读挂载到容器。
 
 ## 容器镜像
@@ -161,6 +188,8 @@ ghcr.io/synrise25/rss-pod
 
 - [`config.example.yaml`](config.example.yaml)：带中英双语注释的公开配置参考；使用前复制为
   被忽略的 `config.yaml`
+- [`notice.example.md`](notice.example.md)：播放器 Markdown 通知示例；使用前复制为被忽略的
+  `notice.md`
 - [`.env.example`](.env.example)：配置文件所引用的环境变量
 - [`CONTRIBUTING.md`](CONTRIBUTING.md)：开发与贡献说明
 

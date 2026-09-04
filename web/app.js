@@ -15,6 +15,7 @@ const copy = {
     languageLabel: "Language",
     githubLabel: "View project on GitHub",
     dateTabsLabel: "Choose a date",
+    noticeLabel: "Notice",
     sourceSectionLabel: "Filter by source",
     sourceFilterLabel: "Feeds",
     episodeRegionLabel: "Podcast episodes",
@@ -50,6 +51,7 @@ const copy = {
     languageLabel: "语言",
     githubLabel: "在 GitHub 上查看项目",
     dateTabsLabel: "选择日期",
+    noticeLabel: "通知",
     sourceSectionLabel: "按来源筛选",
     sourceFilterLabel: "内容来源",
     episodeRegionLabel: "播客列表",
@@ -116,6 +118,8 @@ const elements = {
   languageLinks: [...document.querySelectorAll("[data-locale]")],
   githubLink: document.querySelector("#github-link"),
   dateTabs: document.querySelector("#date-tabs"),
+  noticeRegion: document.querySelector("#notice-region"),
+  noticeContent: document.querySelector("#notice-content"),
   sourceFilterSection: document.querySelector("#source-filter-section"),
   sourceFilterLabel: document.querySelector("#source-filter-label"),
   sourceFilters: document.querySelector("#source-filters"),
@@ -163,7 +167,25 @@ document.addEventListener("visibilitychange", () => {
 
 bindPlayerEvents();
 renderSpeed();
+loadNotice();
 loadPlayer();
+
+async function loadNotice() {
+  try {
+    const response = await fetch("/api/v1/player/notice", {
+      cache: "no-store",
+      headers: { Accept: "text/html" },
+    });
+    if (response.status === 204) return;
+    if (!response.ok) throw new Error(`notice API returned ${response.status}`);
+    const html = await response.text();
+    if (!html.trim()) return;
+    elements.noticeContent.innerHTML = html;
+    elements.noticeRegion.hidden = false;
+  } catch (error) {
+    console.error("load notice", error);
+  }
+}
 
 async function loadPlayer() {
   setStatus(copy.loading);
@@ -544,6 +566,7 @@ function applyLocale() {
   elements.githubLink.setAttribute("aria-label", copy.githubLabel);
   elements.githubLink.title = copy.githubLabel;
   elements.dateTabs.setAttribute("aria-label", copy.dateTabsLabel);
+  elements.noticeRegion.setAttribute("aria-label", copy.noticeLabel);
   elements.sourceFilterSection.setAttribute("aria-label", copy.sourceSectionLabel);
   elements.sourceFilterLabel.textContent = copy.sourceFilterLabel;
   elements.episodeRegion.setAttribute("aria-label", copy.episodeRegionLabel);

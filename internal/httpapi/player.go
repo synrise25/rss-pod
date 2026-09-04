@@ -1,21 +1,33 @@
 package httpapi
 
 import (
+	"bytes"
+	"errors"
+	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/extension"
 
 	"github.com/synrise25/rss-pod/internal/config"
 )
 
 type playerServer struct {
-	pool    *pgxpool.Pool
-	sources []playerSource
+	pool       *pgxpool.Pool
+	sources    []playerSource
+	noticeFile string
 }
+
+const maxNoticeBytes = 64 << 10
+
+var noticeMarkdown = goldmark.New(goldmark.WithExtensions(extension.GFM))
 
 type playerSource struct {
 	ID   string `json:"id"`
@@ -30,11 +42,59 @@ func newPlayerServer(cfg *config.Config, pool *pgxpool.Pool) *playerServer {
 		}
 		sources = append(sources, playerSource{ID: source.ID, Name: source.Name})
 	}
-	return &playerServer{pool: pool, sources: sources}
+	return &playerServer{
+		pool:       pool,
+		sources:    sources,
+		noticeFile: strings.TrimSpace(cfg.Runtime.HTTP.NoticeFile),
+	}
 }
 
 func (s *playerServer) listSources(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"sources": s.sources})
+}
+
+func (s *playerServer) notice(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if s.noticeFile == "" {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	file, err := os.Open(s.noticeFile)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			slog.Error("open player notice", "error", err)
+		}
+		http.Error(w, "player notice unavailable", http.StatusInternalServerError)
+		return
+	}
+	defer file.Close()
+
+	content, err := io.ReadAll(io.LimitReader(file, maxNoticeBytes+1))
+	if err != nil {
+		slog.Error("read player notice", "error", err)
+		http.Error(w, "player notice unavailable", http.StatusInternalServerError)
+		return
+	}
+	if len(content) > maxNoticeBytes {
+		http.Error(w, "player notice is too large", http.StatusInternalServerError)
+		return
+	}
+	if len(bytes.TrimSpace(content)) == 0 {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	var rendered bytes.Buffer
+	if err := noticeMarkdown.Convert(content, &rendered); err != nil {
+		slog.Error("render player notice", "error", err)
+		http.Error(w, "player notice unavailable", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(rendered.Bytes())
 }
 
 type playerEpisode struct {

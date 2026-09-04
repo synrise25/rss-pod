@@ -70,6 +70,91 @@ input:focus-visible {
   background: transparent;
 }
 
+.notice-region {
+  margin-bottom: 10px;
+}
+
+.notice-region[hidden] {
+  display: none;
+}
+
+.notice-content {
+  max-height: min(160px, 22vh);
+  padding: 10px 14px;
+  border: 1px solid rgb(142 194 241 / 48%);
+  border-radius: 12px;
+  background: linear-gradient(105deg, rgb(239 248 255 / 94%), rgb(225 244 255 / 78%));
+  color: #294767;
+  font-size: 15px;
+  line-height: 1.55;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+.notice-content > :first-child {
+  margin-top: 0;
+}
+
+.notice-content > :last-child {
+  margin-bottom: 0;
+}
+
+.notice-content :is(p, ul, ol, blockquote, pre, table) {
+  margin-block: 0.45em;
+}
+
+.notice-content :is(ul, ol) {
+  padding-inline-start: 1.5em;
+}
+
+.notice-content a {
+  color: var(--blue-pressed);
+  font-weight: 600;
+}
+
+.notice-content a:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.notice-content code {
+  padding: 0.12em 0.35em;
+  border-radius: 5px;
+  background: rgb(255 255 255 / 72%);
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+
+.notice-content pre {
+  padding: 10px;
+  overflow-x: auto;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 72%);
+}
+
+.notice-content pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.notice-content blockquote {
+  padding-inline-start: 12px;
+  border-inline-start: 3px solid var(--blue);
+  color: var(--muted);
+}
+
+.notice-content table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+
+.notice-content :is(th, td) {
+  padding: 5px 8px;
+  border: 1px solid var(--line-strong);
+}
+
 .page-header {
   padding: 24px var(--content-padding) 0;
   border-bottom: 1px solid var(--line);
@@ -932,6 +1017,11 @@ input:focus-visible {
   .source-filter-section {
     display: block;
     padding: 8px 10px;
+  }
+
+  .notice-content {
+    padding: 8px 10px;
+    font-size: 14px;
   }
 
   .source-filter-label {

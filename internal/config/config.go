@@ -49,6 +49,7 @@ type RuntimeConfig struct {
 type HTTPConfig struct {
 	Listen           string `yaml:"listen"`
 	ManagementListen string `yaml:"management_listen"`
+	NoticeFile       string `yaml:"notice_file"`
 }
 
 func (c HTTPConfig) ManagementAddress() string {

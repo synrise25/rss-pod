@@ -119,6 +119,29 @@ listener. `/` redirects from the browser's preferred language to the stable
 English route at `/en` or Simplified Chinese at `/zh-cn`; the language switcher
 keeps the current query string.
 
+### Player notice
+
+The player can show a Markdown notice between the page heading and the date
+tabs. Copy the example and edit it as needed:
+
+```bash
+cp notice.example.md notice.md
+```
+
+Then set the file path in `config.yaml`:
+
+```yaml
+runtime:
+  http:
+    notice_file: notice.md
+```
+
+The notice stays hidden when `notice_file` is empty. The service reads the file
+on every page load, so edits to `notice.md` appear after a refresh without
+rebuilding the image. CommonMark and GitHub Flavored Markdown features such as
+tables, strikethrough, and task lists are supported. Raw HTML in Markdown is not
+executed for security. Notice files are limited to 64 KiB.
+
 The main commands are:
 
 | Command | Purpose |
@@ -156,6 +179,13 @@ docker run --detach \
   rss-pod:dev run --config /app/config.yaml
 ```
 
+When `notice_file: notice.md` is configured, add this read-only mount to the
+startup command:
+
+```bash
+--volume "$PWD/notice.md:/app/notice.md:ro" \
+```
+
 Mount `prompts/` as well when you maintain a deployment-specific prompt.
 
 ## Container images
@@ -176,6 +206,8 @@ GitHub Release with automatically generated release notes.
 
 - [`config.example.yaml`](config.example.yaml) — publishable configuration
   reference with bilingual comments; copy it to ignored `config.yaml` before use
+- [`notice.example.md`](notice.example.md) — Markdown player notice example;
+  copy it to ignored `notice.md` before use
 - [`.env.example`](.env.example) — environment variables referenced by the
   configuration
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — development and pull request guidance

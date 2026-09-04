@@ -10,6 +10,9 @@ runtime:
     # The management API, health checks, and podcast RSS are bound to loopback inside the container.
     # 管理 API、健康检查和 Podcast RSS 强制绑定容器内部回环地址。
     management_listen: 127.0.0.1:8081
+    # Optional Markdown notice shown between the player heading and date tabs; mount the file read-only in containers.
+    # 可选的 Markdown 通知，显示在播放器标题与日期标签之间；容器部署时请只读挂载该文件。
+    notice_file: ""
 
   database:
     type: postgres
