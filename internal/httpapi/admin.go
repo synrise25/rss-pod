@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"mime"
 	"net/http"
 	"net/url"
 	"strings"
@@ -156,7 +157,8 @@ func matchTOTPStep(secret []byte, code string, now time.Time) int64 {
 }
 
 func (s *adminServer) login(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("Content-Type") != "application/json" {
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
 		writeError(w, http.StatusUnsupportedMediaType, "JSON required")
 		return
 	}

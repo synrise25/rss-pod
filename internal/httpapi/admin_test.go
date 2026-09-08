@@ -81,6 +81,32 @@ func TestAdminDisabledAndGuard(t *testing.T) {
 	}
 }
 
+func TestAdminLoginContentType(t *testing.T) {
+	s := &adminServer{}
+	for _, tc := range []struct {
+		contentType string
+		status      int
+	}{
+		{"application/json", http.StatusBadRequest},
+		{"application/json; charset=utf-8", http.StatusBadRequest},
+		{"Application/JSON; Charset=UTF-8", http.StatusBadRequest},
+		{"", http.StatusUnsupportedMediaType},
+		{"text/plain", http.StatusUnsupportedMediaType},
+		{"application/json; charset", http.StatusUnsupportedMediaType},
+	} {
+		t.Run(tc.contentType, func(t *testing.T) {
+			// Invalid JSON reaches body validation only for supported media types.
+			r := httptest.NewRequest("POST", "/api/v1/admin/login", strings.NewReader("{"))
+			r.Header.Set("Content-Type", tc.contentType)
+			rr := httptest.NewRecorder()
+			s.login(rr, r)
+			if rr.Code != tc.status {
+				t.Fatalf("status %d, want %d", rr.Code, tc.status)
+			}
+		})
+	}
+}
+
 // The optional URL must point to a disposable test database. Every test uses an
 // isolated schema; no real configuration or credentials are loaded.
 func adminTestPool(t *testing.T) *pgxpool.Pool {

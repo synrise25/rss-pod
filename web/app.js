@@ -248,6 +248,7 @@ async function loadPlayer() {
   setStatus(copy.loading);
   try {
     const payload = isDemoMode() ? demoPayload() : await fetchPlayerData();
+    if (payload === null) return;
     state.sources = payload.sources;
     state.episodes = payload.episodes
       .map(normalizeEpisode)
@@ -277,7 +278,10 @@ async function fetchPlayerData() {
     fetch(`/api/v1/${isAdminPage ? "admin" : "player"}/episodes?${params}`, { headers: { Accept: "application/json" } }),
   ]);
 
-  if (isAdminPage && episodesResponse.status === 401) showAdminLogin(adminCopy.expired);
+  if (isAdminPage && episodesResponse.status === 401) {
+    showAdminLogin(adminCopy.expired);
+    return null;
+  }
   if (!sourcesResponse.ok || !episodesResponse.ok) {
     throw new Error(`player API returned ${sourcesResponse.status}/${episodesResponse.status}`);
   }
