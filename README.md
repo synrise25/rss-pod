@@ -123,8 +123,9 @@ keeps the current query string.
 
 The optional admin page shares the player port: `/admin` opens in Chinese, with
 explicit `/admin/en` and `/admin/zh-cn` routes also available. All admin pages and
-`/api/v1/admin/*` endpoints are disabled when no secret is configured. They do not
-expose operational configuration or job retry controls.
+`/api/v1/admin/*` endpoints are disabled when no secret is configured. All three
+page routes redirect trailing-slash URLs to their canonical paths while preserving
+query parameters. They do not expose operational configuration or job retry controls.
 
 After upgrading, run `rss-pod migrate`, then inject this environment variable
 into `serve` or `run` and restart:
