@@ -422,7 +422,7 @@ func Load(path string) (*Config, error) {
 	if err := document.Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("decode config: %w", err)
 	}
-	cfg.Admin = AdminConfig{TOTPSecret: os.Getenv("RSS_POD_ADMIN_TOTP_SECRET"), Origin: os.Getenv("RSS_POD_ADMIN_ORIGIN")}
+	cfg.Admin = AdminConfig{TOTPSecret: os.Getenv("RSS_POD_ADMIN_TOTP_SECRET")}
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}

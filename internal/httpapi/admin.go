@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -26,11 +27,11 @@ const adminCookie = "rss_pod_admin"
 const adminSessionTTL = 30 * time.Minute
 
 type adminServer struct {
-	player  *playerServer
-	pool    *pgxpool.Pool
-	secret  []byte
-	keyHash string
-	origin  string
+	player      *playerServer
+	pool        *pgxpool.Pool
+	secret      []byte
+	keyHash     string
+	crossOrigin http.CrossOriginProtection
 }
 
 func newAdminServer(cfg config.AdminConfig, pool *pgxpool.Pool, player *playerServer) *adminServer {
@@ -38,7 +39,7 @@ func newAdminServer(cfg config.AdminConfig, pool *pgxpool.Pool, player *playerSe
 		return nil
 	}
 	secret, _ := cfg.SecretBytes()
-	return &adminServer{pool: pool, player: player, secret: secret, keyHash: tokenHash(string(secret)), origin: cfg.Origin}
+	return &adminServer{pool: pool, player: player, secret: secret, keyHash: tokenHash(string(secret))}
 }
 
 func (s *adminServer) register(mux *http.ServeMux) {
@@ -77,8 +78,9 @@ func (s *adminServer) guard(auth bool, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		// Use a configured public origin, never untrusted proxy headers.
-		if r.Method != http.MethodGet && r.Header.Get("Origin") != s.origin {
+		// Derive the site's origin from the browser request. Reverse proxies must
+		// preserve Host; forwarded host/proto headers are never trusted here.
+		if r.Method != http.MethodGet && (!validAdminOrigin(r) || s.crossOrigin.Check(r) != nil) {
 			writeError(w, http.StatusForbidden, "invalid origin")
 			return
 		}
@@ -105,6 +107,20 @@ func (s *adminServer) guard(auth bool, next http.HandlerFunc) http.HandlerFunc {
 		}
 		next(w, r)
 	}
+}
+
+// HTTPS is required except for local development. Comparing the actual Host
+// also works behind TLS termination without a configured public URL.
+func validAdminOrigin(r *http.Request) bool {
+	origin, err := url.Parse(r.Header.Get("Origin"))
+	if err != nil || origin.Host == "" || origin.Host != r.Host || origin.User != nil || origin.Path != "" || origin.RawQuery != "" || origin.Fragment != "" || origin.ForceQuery {
+		return false
+	}
+	if origin.Scheme == "https" {
+		return true
+	}
+	local := origin.Hostname() == "localhost" || origin.Hostname() == "127.0.0.1" || origin.Hostname() == "::1"
+	return origin.Scheme == "http" && local
 }
 
 // RFC 6238, SHA-1, six digits and 30 second steps (authenticator defaults).
@@ -199,7 +215,7 @@ func (s *adminServer) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "invalid or already used code")
 		return
 	}
-	s.setCookie(w, token, int(adminSessionTTL.Seconds()))
+	s.setCookie(w, r, token, int(adminSessionTTL.Seconds()))
 	writeJSON(w, http.StatusOK, map[string]string{"csrf_token": csrfToken(token)})
 }
 func randomToken() string {
@@ -207,8 +223,8 @@ func randomToken() string {
 	_, _ = rand.Read(value[:])
 	return hex.EncodeToString(value[:])
 }
-func (s *adminServer) setCookie(w http.ResponseWriter, token string, maxAge int) {
-	http.SetCookie(w, &http.Cookie{Name: adminCookie, Value: token, Path: "/api/v1/admin", MaxAge: maxAge, HttpOnly: true, Secure: strings.HasPrefix(s.origin, "https://"), SameSite: http.SameSiteStrictMode})
+func (s *adminServer) setCookie(w http.ResponseWriter, r *http.Request, token string, maxAge int) {
+	http.SetCookie(w, &http.Cookie{Name: adminCookie, Value: token, Path: "/api/v1/admin", MaxAge: maxAge, HttpOnly: true, Secure: !strings.HasPrefix(r.Header.Get("Origin"), "http://"), SameSite: http.SameSiteStrictMode})
 }
 func (s *adminServer) session(w http.ResponseWriter, r *http.Request) {
 	cookie, _ := r.Cookie(adminCookie)
@@ -220,7 +236,7 @@ func (s *adminServer) logout(w http.ResponseWriter, r *http.Request) {
 		s.unavailable(w, err)
 		return
 	}
-	s.setCookie(w, "", -1)
+	s.setCookie(w, r, "", -1)
 	w.WriteHeader(http.StatusNoContent)
 }
 func (s *adminServer) unavailable(w http.ResponseWriter, err error) {

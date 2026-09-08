@@ -126,21 +126,19 @@ explicit `/admin/en` and `/admin/zh-cn` routes also available. All admin pages a
 `/api/v1/admin/*` endpoints are disabled when no secret is configured. They do not
 expose operational configuration or job retry controls.
 
-After upgrading, run `rss-pod migrate`, then inject these environment variables
+After upgrading, run `rss-pod migrate`, then inject this environment variable
 into `serve` or `run` and restart:
 
 ```dotenv
 RSS_POD_ADMIN_TOTP_SECRET=<your generated Base32 secret>
-RSS_POD_ADMIN_ORIGIN=https://podcasts.example.com
 ```
 
-The origin must match the browser's scheme, host and port exactly, without a
-path or trailing slash. Production requires HTTPS; loopback HTTP is allowed for
-local development. Forward `/admin`, `/admin/*` and `/api/v1/admin/*` to the player
-port through your reverse proxy. For a site at `https://example.com`, the admin
-page is `https://example.com/admin` and the origin is `https://example.com`.
-This value validates that write requests come from your site; it does not create
-a separate domain or configure a page path.
+No public URL configuration is needed: a site at `https://example.com` has its
+admin page at `https://example.com/admin`. The service checks that write requests
+come from the current site's origin and also requires a CSRF token. Use HTTPS in
+production; loopback HTTP is allowed for local development. Reverse proxies must
+preserve the original `Host` and forward `/admin`, `/admin/*` and `/api/v1/admin/*`
+to the player port.
 
 Generate a secret locally and store it in the ignored `.env` or a secret manager:
 

@@ -57,7 +57,7 @@ func TestAdminDisabledAndGuard(t *testing.T) {
 			t.Fatalf("disabled %s: %d", path, rr.Code)
 		}
 	}
-	s := newAdminServer(config.AdminConfig{TOTPSecret: testAdminSecret, Origin: testAdminOrigin}, nil, &playerServer{})
+	s := newAdminServer(config.AdminConfig{TOTPSecret: testAdminSecret}, nil, &playerServer{})
 	mux = newPlayerMux(&playerServer{}, s)
 	for _, tc := range []struct {
 		method, path, origin string
@@ -68,7 +68,7 @@ func TestAdminDisabledAndGuard(t *testing.T) {
 		{"POST", "/api/v1/admin/login", "", 403}, {"POST", "/api/v1/admin/login", "https://evil.example", 403},
 		{"PATCH", "/api/v1/admin/episodes/invalid/visibility", testAdminOrigin, 401},
 	} {
-		req := httptest.NewRequest(tc.method, tc.path, nil)
+		req := httptest.NewRequest(tc.method, testAdminOrigin+tc.path, nil)
 		req.Header.Set("Origin", tc.origin)
 		rr := httptest.NewRecorder()
 		mux.ServeHTTP(rr, req)
@@ -128,7 +128,7 @@ func adminTestPool(t *testing.T) *pgxpool.Pool {
 
 func TestAdminSessionAndVisibilityIntegration(t *testing.T) {
 	pool := adminTestPool(t)
-	cfg := &config.Config{Admin: config.AdminConfig{TOTPSecret: testAdminSecret, Origin: testAdminOrigin}, Sources: []config.SourceConfig{{ID: "test", Name: "Test"}}}
+	cfg := &config.Config{Admin: config.AdminConfig{TOTPSecret: testAdminSecret}, Sources: []config.SourceConfig{{ID: "test", Name: "Test"}}}
 	cfg.Defaults.Podcast.MaxAge = "240h"
 	player := newPlayerServer(cfg, pool)
 	admin := newAdminServer(cfg.Admin, pool, player)
@@ -136,7 +136,7 @@ func TestAdminSessionAndVisibilityIntegration(t *testing.T) {
 	var cookie *http.Cookie
 	var csrf string
 	request := func(method, path, body string, authorized bool) *httptest.ResponseRecorder {
-		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r := httptest.NewRequest(method, testAdminOrigin+path, strings.NewReader(body))
 		r.Header.Set("Origin", testAdminOrigin)
 		r.Header.Set("Content-Type", "application/json")
 		if authorized && cookie != nil {
@@ -236,7 +236,7 @@ func TestAdminSessionAndVisibilityIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A new environment secret immediately rejects sessions from the old key.
-	rotated := newAdminServer(config.AdminConfig{TOTPSecret: "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP", Origin: testAdminOrigin}, pool, player)
+	rotated := newAdminServer(config.AdminConfig{TOTPSecret: "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"}, pool, player)
 	rotatedMux := newPlayerMux(player, rotated)
 	req = httptest.NewRequest("GET", "/api/v1/admin/session", nil)
 	req.AddCookie(cookie)
@@ -253,7 +253,7 @@ func TestAdminSessionAndVisibilityIntegration(t *testing.T) {
 
 func TestAdminRateLimitAndReplayIntegration(t *testing.T) {
 	pool := adminTestPool(t)
-	s := newAdminServer(config.AdminConfig{TOTPSecret: testAdminSecret, Origin: testAdminOrigin}, pool, &playerServer{})
+	s := newAdminServer(config.AdminConfig{TOTPSecret: testAdminSecret}, pool, &playerServer{})
 	login := func(code string) int {
 		r := httptest.NewRequest("POST", "/api/v1/admin/login", strings.NewReader(fmt.Sprintf(`{"code":%q}`, code)))
 		r.Header.Set("Content-Type", "application/json")
@@ -297,5 +297,56 @@ func TestAdminRateLimitAndReplayIntegration(t *testing.T) {
 	// Replay state is durable even when all sessions expire.
 	if got := login(code); got != 401 {
 		t.Fatalf("replay after expiry: %d", got)
+	}
+}
+
+func TestAdminAutomaticOriginAndCookieSecurity(t *testing.T) {
+	s := newAdminServer(config.AdminConfig{TOTPSecret: testAdminSecret}, nil, &playerServer{})
+	for _, tc := range []struct {
+		name, host, origin, fetchSite string
+		status                        int
+		secure                        bool
+	}{
+		{"public site", "example.com", "https://example.com", "same-origin", 204, true},
+		{"another domain without configuration", "podcasts.example.org", "https://podcasts.example.org", "", 204, true},
+		{"custom port", "example.com:8443", "https://example.com:8443", "", 204, true},
+		{"localhost HTTP", "localhost:8080", "http://localhost:8080", "", 204, false},
+		{"loopback HTTP", "127.0.0.1:8080", "http://127.0.0.1:8080", "", 204, false},
+		{"IPv6 HTTP", "[::1]:8080", "http://[::1]:8080", "", 204, false},
+		{"localhost HTTPS", "localhost:8080", "https://localhost:8080", "", 204, true},
+		{"remote HTTP", "example.com", "http://example.com", "", 403, false},
+		{"other site", "example.com", "https://evil.example", "cross-site", 403, false},
+		{"different port", "example.com:8443", "https://example.com", "", 403, false},
+		{"missing origin", "example.com", "", "", 403, false},
+		{"opaque origin", "example.com", "null", "", 403, false},
+		{"origin path", "example.com", "https://example.com/admin", "", 403, false},
+		{"untrusted forwarded host", "backend:8080", "https://example.com", "", 403, false},
+		{"cross-site fetch metadata", "example.com", "https://example.com", "cross-site", 403, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Simulate TLS termination: the backend connection itself is plain HTTP.
+			r := httptest.NewRequest("POST", "http://backend/api/v1/admin/login", nil)
+			r.Host = tc.host
+			r.Header.Set("Origin", tc.origin)
+			r.Header.Set("Sec-Fetch-Site", tc.fetchSite)
+			r.Header.Set("X-Forwarded-Host", "example.com")
+			r.Header.Set("X-Forwarded-Proto", "http")
+			rr := httptest.NewRecorder()
+			s.guard(false, func(w http.ResponseWriter, r *http.Request) {
+				s.setCookie(w, r, "test-token", 1800)
+				w.WriteHeader(204)
+			})(rr, r)
+			if rr.Code != tc.status {
+				t.Fatalf("status=%d want=%d: %s", rr.Code, tc.status, rr.Body.String())
+			}
+			if tc.status == 204 {
+				cookie := rr.Result().Cookies()[0]
+				if cookie.Secure != tc.secure {
+					t.Fatalf("Secure=%v want=%v", cookie.Secure, tc.secure)
+				}
+			} else if len(rr.Result().Cookies()) != 0 {
+				t.Fatal("rejected request issued a cookie")
+			}
+		})
 	}
 }

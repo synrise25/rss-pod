@@ -116,15 +116,12 @@ go run ./cmd/rss-pod run
 
 ```dotenv
 RSS_POD_ADMIN_TOTP_SECRET=<自行生成的 Base32 密钥>
-RSS_POD_ADMIN_ORIGIN=https://podcasts.example.com
 ```
 
-`RSS_POD_ADMIN_ORIGIN` 必须精确匹配浏览器地址栏的协议、域名和端口，不含路径或末尾
-斜杠；线上必须使用 HTTPS。本机开发可用 `http://localhost:8080` 或回环 IP。反向代理
-应将 `/admin`、`/admin/*` 和 `/api/v1/admin/*` 转发给播放器端口。
-例如主页是 `https://example.com`，管理员入口就是 `https://example.com/admin`，
-此时变量填写 `RSS_POD_ADMIN_ORIGIN=https://example.com`。它用于校验写请求来自本站，
-不是另建域名或配置页面路径。
+无需配置网站地址：主页是 `https://example.com`，管理员入口自动就是
+`https://example.com/admin`。服务根据当前请求校验同源，写操作仍需 CSRF token。
+线上使用 HTTPS，本机开发允许 `http://localhost:8080` 或回环 IP。反向代理保留原始
+`Host`，并将 `/admin`、`/admin/*` 和 `/api/v1/admin/*` 转发给播放器端口即可。
 
 可在自己的终端生成密钥，然后存入被忽略的 `.env` 或 secret manager：
 
