@@ -50,7 +50,7 @@ func TestTOTPRFC6238(t *testing.T) {
 
 func TestAdminDisabledAndGuard(t *testing.T) {
 	mux := newPlayerMux(&playerServer{})
-	for _, path := range []string{"/admin", "/admin/en", "/admin/zh-cn", "/api/v1/admin/session", "/api/v1/admin/episodes"} {
+	for _, path := range []string{"/admin", "/admin/en", "/admin/zh-cn", "/admin/", "/admin/en/", "/admin/zh-cn/", "/api/v1/admin/session", "/api/v1/admin/episodes"} {
 		rr := httptest.NewRecorder()
 		mux.ServeHTTP(rr, httptest.NewRequest("GET", path, nil))
 		if rr.Code != 404 {
@@ -348,5 +348,33 @@ func TestAdminAutomaticOriginAndCookieSecurity(t *testing.T) {
 				t.Fatal("rejected request issued a cookie")
 			}
 		})
+	}
+}
+
+func TestAdminTrailingSlashRedirects(t *testing.T) {
+	admin := newAdminServer(config.AdminConfig{TOTPSecret: testAdminSecret}, nil, &playerServer{})
+	mux := newPlayerMux(&playerServer{}, admin)
+	for _, path := range []string{"/admin", "/admin/en", "/admin/zh-cn"} {
+		for _, query := range []string{"", "?", "?source_id=a%2Fb&demo=1"} {
+			for _, method := range []string{http.MethodGet, http.MethodHead} {
+				rr := httptest.NewRecorder()
+				mux.ServeHTTP(rr, httptest.NewRequest(method, path+"/"+query, nil))
+				if rr.Code != http.StatusPermanentRedirect || rr.Header().Get("Location") != path+query {
+					t.Fatalf("%s %s: status=%d location=%q", method, path+"/"+query, rr.Code, rr.Header().Get("Location"))
+				}
+				canonical := httptest.NewRecorder()
+				mux.ServeHTTP(canonical, httptest.NewRequest(method, rr.Header().Get("Location"), nil))
+				if canonical.Code != http.StatusOK {
+					t.Fatalf("redirect target: %d", canonical.Code)
+				}
+			}
+		}
+	}
+	for _, path := range []string{"/admin/unknown", "/admin/en/unknown", "/admin/zh-cn/unknown"} {
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, path, nil))
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("%s: got %d, want 404", path, rr.Code)
+		}
 	}
 }

@@ -45,6 +45,14 @@ func newAdminServer(cfg config.AdminConfig, pool *pgxpool.Pool, player *playerSe
 func (s *adminServer) register(mux *http.ServeMux) {
 	for _, path := range []string{"/admin", "/admin/en", "/admin/zh-cn"} {
 		mux.HandleFunc("GET "+path, s.page)
+		mux.HandleFunc("GET "+path+"/{$}", func(w http.ResponseWriter, r *http.Request) {
+			target := path
+			if r.URL.RawQuery != "" || r.URL.ForceQuery {
+				target += "?" + r.URL.RawQuery
+			}
+			w.Header().Set("Cache-Control", "no-store")
+			http.Redirect(w, r, target, http.StatusPermanentRedirect)
+		})
 	}
 	mux.HandleFunc("POST /api/v1/admin/login", s.guard(false, s.login))
 	mux.HandleFunc("GET /api/v1/admin/session", s.guard(true, s.session))

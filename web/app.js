@@ -1007,6 +1007,8 @@ async function setupAdmin() {
     </form><p id="admin-message" role="status" aria-live="polite"></p>
     <button id="admin-logout" type="button" hidden>${adminCopy.logout}</button>`;
   elements.dateTabs.before(panel);
+  const logoutButton = panel.querySelector("#admin-logout");
+  elements.languageSwitcher.before(logoutButton);
   const form = panel.querySelector("form");
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -1027,7 +1029,7 @@ async function setupAdmin() {
     } catch { adminMessage(adminCopy.error); }
     finally { button.disabled = false; }
   });
-  panel.querySelector("#admin-logout").addEventListener("click", async () => {
+  logoutButton.addEventListener("click", async () => {
     try {
       const response = await adminFetch("/api/v1/admin/logout", { method: "POST" });
       if (response.ok) showAdminLogin();
@@ -1050,6 +1052,7 @@ function adminMessage(message) {
 function setAdminPlayerVisible(visible) {
   const panel = document.querySelector(".admin-panel");
   panel.classList.toggle("is-authenticated", visible);
+  document.body.classList.toggle("admin-authenticated", visible);
   document.body.classList.toggle("admin-locked", !visible);
   if (visible) elements.dateTabs.before(panel);
   else document.querySelector(".app-shell").append(panel);
