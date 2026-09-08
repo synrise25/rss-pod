@@ -31,6 +31,7 @@ const (
 )
 
 type Config struct {
+	Admin            AdminConfig                `yaml:"-" json:"-"`
 	Version          int                        `yaml:"version"`
 	Runtime          RuntimeConfig              `yaml:"runtime"`
 	Services         ServicesConfig             `yaml:"services"`
@@ -421,6 +422,7 @@ func Load(path string) (*Config, error) {
 	if err := document.Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("decode config: %w", err)
 	}
+	cfg.Admin = AdminConfig{TOTPSecret: os.Getenv("RSS_POD_ADMIN_TOTP_SECRET"), Origin: os.Getenv("RSS_POD_ADMIN_ORIGIN")}
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -448,6 +450,9 @@ func resolveEnvironment(node *yaml.Node) error {
 }
 
 func (c *Config) Validate() error {
+	if err := c.Admin.Validate(); err != nil {
+		return err
+	}
 	if c.Version != CurrentVersion {
 		return fmt.Errorf("unsupported config version %d (expected %d)", c.Version, CurrentVersion)
 	}

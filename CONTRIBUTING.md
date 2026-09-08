@@ -17,6 +17,11 @@ Thanks for helping improve rss-pod.
    docker build -t rss-pod:dev .
    ```
 
+Admin authentication and episode visibility integration tests run automatically
+in CI against PostgreSQL. Locally, set `RSS_POD_TEST_DATABASE_URL` to a disposable
+PostgreSQL database before running `go test ./...` to include them. The tests
+create and remove isolated schemas; never point this variable at production.
+
 ## Pull requests
 
 - Keep changes focused and include tests for behavior changes.

@@ -106,6 +106,46 @@ go run ./cmd/rss-pod run
 公共 listener 上。播放器会在 `/` 根据浏览器首选语言跳转到稳定的英文地址 `/en` 或
 简体中文地址 `/zh-cn`；页面语言切换会保留当前查询参数。
 
+### 管理员页面与隐藏节目
+
+可选管理员页面与播放器使用相同端口，入口是 `/admin`（中文），也支持 `/admin/en` 和
+`/admin/zh-cn`。未设置密钥时，页面和 `/api/v1/admin/*` 接口均不启用。
+它独立于仅回环可访问的运维管理 API，不会开放服务配置或任务重试等运维接口。
+
+升级后先执行 `rss-pod migrate`，再为 `serve` 或 `run` 注入环境变量并重启：
+
+```dotenv
+RSS_POD_ADMIN_TOTP_SECRET=<自行生成的 Base32 密钥>
+RSS_POD_ADMIN_ORIGIN=https://podcasts.example.com
+```
+
+`RSS_POD_ADMIN_ORIGIN` 必须精确匹配浏览器地址栏的协议、域名和端口，不含路径或末尾
+斜杠；线上必须使用 HTTPS。本机开发可用 `http://localhost:8080` 或回环 IP。反向代理
+应将 `/admin`、`/admin/*` 和 `/api/v1/admin/*` 转发给播放器端口。
+例如主页是 `https://example.com`，管理员入口就是 `https://example.com/admin`，
+此时变量填写 `RSS_POD_ADMIN_ORIGIN=https://example.com`。它用于校验写请求来自本站，
+不是另建域名或配置页面路径。
+
+可在自己的终端生成密钥，然后存入被忽略的 `.env` 或 secret manager：
+
+```bash
+python3 -c 'import base64, secrets; print(base64.b32encode(secrets.token_bytes(20)).decode())'
+```
+
+在验证器中手动添加账户，填入同一密钥，选择基于时间的 **SHA-1、6 位数字、30 秒**。
+登录仅需输入动态码；这是 TOTP 单因素登录，并非密码加动态码的双因素认证。
+会话有效期为 30 分钟，Cookie 使用 HttpOnly、SameSite 和 HTTPS Secure 属性；
+写操作校验来源及 CSRF token。每个密钥每分钟最多尝试 5 次，已成功使用的动态码不能
+再次登录，限流与防重放状态保存在 PostgreSQL 中并由多个实例共享。
+保持服务器时间同步；遗失验证器时，在服务器更换密钥并重启即可重新配置，也会让旧会话失效。
+
+登录后复用主页的日期、来源筛选和播放卡片，每条节目多出“隐藏／恢复显示”按钮：
+
+- 隐藏后，节目不再出现在公共播放器和 Podcast RSS 中；管理员仍能看到“已隐藏”状态并恢复。
+- 原文、脚本、音频与 RSS 去重记录保留，日常重复抓取不会重新生成这条节目。
+- 隐藏不延长原有保留期限；当前数据库回收阈值为 10 天，音频仍遵循对象存储生命周期。
+- 隐藏是可逆的内容管理操作，不是文件访问控制；已有音频直链、已下载内容或客户端缓存不会被撤回。
+
 ### 播放器通知
 
 播放器可以在页面标题与日期标签之间显示一段 Markdown 通知。先复制示例并按需修改：
@@ -227,7 +267,9 @@ content:
 
 ## 安全边界
 
-公共 listener 只提供播放器和只读 `/api/v1/player/*` 路由。健康检查、手动拉取、重试、
+公共 listener 默认提供播放器和只读 `/api/v1/player/*` 路由；设置管理员环境变量后，
+额外启用 TOTP 登录保护的 `/admin` 和 `/api/v1/admin/*`，仅用于节目隐藏与恢复。
+健康检查、手动拉取、重试、
 数据库查询和播客管理接口只绑定回环 listener。不要把容器管理端口映射到宿主机公网，
 也不要让反向代理转发它。
 

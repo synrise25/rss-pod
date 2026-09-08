@@ -124,6 +124,7 @@ func matchesETag(headerValues []string, current string) bool {
 }
 
 type playerEpisode struct {
+	Hidden               bool       `json:"hidden,omitempty"`
 	ID                   uuid.UUID  `json:"id"`
 	SourceID             string     `json:"source_id"`
 	Title                string     `json:"title"`
@@ -135,6 +136,10 @@ type playerEpisode struct {
 }
 
 func (s *playerServer) listEpisodes(w http.ResponseWriter, r *http.Request) {
+	s.episodes(w, r, false)
+}
+
+func (s *playerServer) episodes(w http.ResponseWriter, r *http.Request, includeHidden bool) {
 	limit := 200
 	if value := r.URL.Query().Get("limit"); value != "" {
 		parsed, err := strconv.Atoi(value)
@@ -161,16 +166,17 @@ func (s *playerServer) listEpisodes(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.URL.Query().Get("source_id")
 	rows, err := s.pool.Query(r.Context(), `
 		SELECT e.id, e.source_id, e.title, e.audio_url, e.audio_byte_size, e.audio_duration_seconds,
-		       e.published_at, f.published_at
+		       e.published_at, f.published_at, e.hidden_at IS NOT NULL
 		FROM episodes e
 		JOIN feed_items f ON f.id = e.feed_item_id
 		WHERE e.status = 'published' AND e.audio_url <> ''
+		  AND ($5 OR e.hidden_at IS NULL)
 		  AND ($1 = '' OR e.source_id = $1)
 		  AND ($2::timestamptz IS NULL OR e.published_at >= $2)
 		  AND ($3::timestamptz IS NULL OR e.published_at < $3)
 		ORDER BY e.published_at DESC NULLS LAST
 		LIMIT $4
-	`, sourceID, since, before, limit)
+	`, sourceID, since, before, limit, includeHidden)
 	if err != nil {
 		slog.Error("query player episodes", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to load episodes")
@@ -190,6 +196,7 @@ func (s *playerServer) listEpisodes(w http.ResponseWriter, r *http.Request) {
 			&episode.AudioDurationSeconds,
 			&episode.PublishedAt,
 			&episode.OriginalPublishedAt,
+			&episode.Hidden,
 		); err != nil {
 			slog.Error("scan player episode", "error", err)
 			writeError(w, http.StatusInternalServerError, "failed to load episodes")

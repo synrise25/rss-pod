@@ -38,6 +38,19 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 }
 
 const applicationSchema = `
+CREATE TABLE IF NOT EXISTS admin_auth_state (
+    key_hash text PRIMARY KEY,
+    last_step bigint NOT NULL DEFAULT -1,
+    attempts integer NOT NULL DEFAULT 0,
+    window_started timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS admin_sessions (
+    token_hash text PRIMARY KEY,
+    key_hash text NOT NULL,
+    expires_at timestamptz NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS source_runs (
     id          uuid PRIMARY KEY,
     source_id   text NOT NULL,
@@ -105,6 +118,8 @@ CREATE TABLE IF NOT EXISTS episodes (
     updated_at     timestamptz NOT NULL DEFAULT now(),
     published_at   timestamptz
 );
+
+ALTER TABLE episodes ADD COLUMN IF NOT EXISTS hidden_at timestamptz;
 
 CREATE INDEX IF NOT EXISTS episodes_source_created_idx
     ON episodes (source_id, created_at DESC);

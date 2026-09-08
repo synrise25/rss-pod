@@ -119,6 +119,57 @@ listener. `/` redirects from the browser's preferred language to the stable
 English route at `/en` or Simplified Chinese at `/zh-cn`; the language switcher
 keeps the current query string.
 
+### Admin page and episode visibility
+
+The optional admin page shares the player port: `/admin` opens in Chinese, with
+explicit `/admin/en` and `/admin/zh-cn` routes also available. All admin pages and
+`/api/v1/admin/*` endpoints are disabled when no secret is configured. They do not
+expose operational configuration or job retry controls.
+
+After upgrading, run `rss-pod migrate`, then inject these environment variables
+into `serve` or `run` and restart:
+
+```dotenv
+RSS_POD_ADMIN_TOTP_SECRET=<your generated Base32 secret>
+RSS_POD_ADMIN_ORIGIN=https://podcasts.example.com
+```
+
+The origin must match the browser's scheme, host and port exactly, without a
+path or trailing slash. Production requires HTTPS; loopback HTTP is allowed for
+local development. Forward `/admin`, `/admin/*` and `/api/v1/admin/*` to the player
+port through your reverse proxy. For a site at `https://example.com`, the admin
+page is `https://example.com/admin` and the origin is `https://example.com`.
+This value validates that write requests come from your site; it does not create
+a separate domain or configure a page path.
+
+Generate a secret locally and store it in the ignored `.env` or a secret manager:
+
+```bash
+python3 -c 'import base64, secrets; print(base64.b32encode(secrets.token_bytes(20)).decode())'
+```
+
+Add the same secret manually to your authenticator, using time-based **SHA-1,
+six digits and 30 seconds**. This is TOTP single-factor login, not a password plus
+a second factor. Sessions last 30 minutes and use HttpOnly, SameSite cookies
+with Secure enabled on HTTPS. Write operations check the origin and a CSRF token.
+Each secret permits up to five login attempts per minute; successful codes
+cannot be reused. Rate limits, replay protection and sessions are stored in
+PostgreSQL and shared across instances. Keep server clocks synchronized.
+If you lose your authenticator, replace the environment secret and restart all
+server instances; old sessions become invalid.
+
+The admin page reuses the player's date filters, source filters and playback
+cards, adding a **Hide / Restore** button to each episode:
+
+- Hidden episodes disappear from the public player and Podcast RSS. Admins can
+  still see the hidden state and restore them.
+- Source content, scripts, audio and RSS deduplication records remain, preventing
+  ordinary repeat polling from regenerating the episode while records are retained.
+- Hiding does not extend retention: the current database cleanup threshold is
+  ten days, and audio follows the object store lifecycle.
+- Visibility is reversible moderation, not file access control. Existing audio
+  links, downloads and client caches are not revoked.
+
 ### Player notice
 
 The player can show a Markdown notice between the page heading and the date
@@ -253,8 +304,10 @@ prompt limit, with a warning log that excludes content and URLs.
 
 ## Security model
 
-The public listener serves only the player and read-only `/api/v1/player/*`
-routes. Health checks, polling, retries, database-backed queries, and podcast
+The public listener serves the player and read-only `/api/v1/player/*` routes
+by default. Configuring the admin environment variables additionally enables
+TOTP-protected `/admin` and `/api/v1/admin/*` routes for hiding and restoring
+episodes. Health checks, polling, retries, database-backed queries, and podcast
 management routes are bound to a loopback-only listener. Do not publish the
 management port from a container or reverse proxy it to the internet.
 

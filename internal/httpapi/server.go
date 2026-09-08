@@ -31,13 +31,18 @@ type Server struct {
 func New(cfg *config.Config, pool *pgxpool.Pool, riverClient *river.Client[pgx.Tx]) *Server {
 	s := &Server{config: cfg, pool: pool, river: riverClient}
 	player := newPlayerServer(cfg, pool)
-	s.playerHTTP = newHTTPServer(cfg.Runtime.HTTP.Listen, newPlayerMux(player))
+	s.playerHTTP = newHTTPServer(cfg.Runtime.HTTP.Listen, newPlayerMux(player, newAdminServer(cfg.Admin, pool, player)))
 	s.managementHTTP = newHTTPServer(cfg.Runtime.HTTP.ManagementAddress(), newManagementMux(s))
 	return s
 }
 
-func newPlayerMux(player *playerServer) *http.ServeMux {
+func newPlayerMux(player *playerServer, admins ...*adminServer) *http.ServeMux {
 	mux := http.NewServeMux()
+	for _, admin := range admins {
+		if admin != nil {
+			admin.register(mux)
+		}
+	}
 	mux.HandleFunc("GET /api/v1/player/sources", player.listSources)
 	mux.HandleFunc("GET /api/v1/player/episodes", player.listEpisodes)
 	mux.HandleFunc("GET /api/v1/player/notice", player.notice)
@@ -440,7 +445,7 @@ func (s *Server) podcastFeed(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.pool.Query(r.Context(), `
 		SELECT id, title, audio_url, audio_byte_size, published_at
 		FROM episodes
-		WHERE source_id = $1 AND status = 'published' AND audio_url <> ''
+		WHERE source_id = $1 AND status = 'published' AND audio_url <> '' AND hidden_at IS NULL
 		  AND published_at >= $2
 		ORDER BY published_at DESC NULLS LAST
 		LIMIT 100

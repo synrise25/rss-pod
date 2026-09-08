@@ -4,8 +4,8 @@ version: 6
 
 runtime:
   http:
-    # The public listener only serves player assets and /api/v1/player/*.
-    # 公共 listener 只提供播放器静态资源和 /api/v1/player/*。
+    # Public player assets and /api/v1/player/*; optional authenticated /admin routes are enabled through environment variables.
+    # 公共播放器和 /api/v1/player/*；可通过环境变量启用需登录的 /admin 路由。
     listen: :8080
     # The management API, health checks, and podcast RSS are bound to loopback inside the container.
     # 管理 API、健康检查和 Podcast RSS 强制绑定容器内部回环地址。

@@ -8,7 +8,11 @@ const MEDIA_ARTWORK = [
 ];
 const DEFAULT_SEEK_OFFSET = 10;
 
-const localeKey = /^\/zh-cn(?:\/|$)/i.test(window.location.pathname) ? "zh-CN" : "en";
+const isAdminPage = /^\/admin(?:\/|$)/.test(window.location.pathname);
+let adminCSRF = "";
+let adminSessionTimer;
+let adminBusy = false;
+const localeKey = (/^(?:\/admin)?\/zh-cn(?:\/|$)/i.test(window.location.pathname) || window.location.pathname === "/admin") ? "zh-CN" : "en";
 const copy = {
   en: {
     lang: "en",
@@ -85,6 +89,18 @@ const copy = {
     durationLabel: (duration) => `播放时长 ${duration}`,
   },
 }[localeKey];
+
+const adminCopy = localeKey === "zh-CN" ? {
+  login: "管理员登录", code: "验证器动态码", hint: "输入验证器中的 6 位动态码，会话有效期 30 分钟。",
+  logout: "退出管理", hide: "隐藏", restore: "恢复显示", hidden: "已隐藏",
+  loginError: "动态码无效或已使用，请等待下一组动态码。", rateLimit: "尝试过于频繁，请等待一分钟。",
+  expired: "会话已过期，请重新登录。", error: "操作失败，请稍后重试。",
+} : {
+  login: "Admin login", code: "Authenticator code", hint: "Enter your 6-digit code. Sessions last 30 minutes.",
+  logout: "Sign out", hide: "Hide", restore: "Restore", hidden: "Hidden",
+  loginError: "Invalid or already used code. Wait for the next code.", rateLimit: "Too many attempts. Wait one minute.",
+  expired: "Session expired. Please sign in again.", error: "Operation failed. Please try again.",
+};
 
 const demoContent = {
   en: {
@@ -173,7 +189,8 @@ bindPlayerEvents();
 bindNoticeEvents();
 renderSpeed();
 loadNotice();
-loadPlayer();
+if (isAdminPage) setupAdmin();
+else loadPlayer();
 
 async function loadNotice() {
   try {
@@ -257,9 +274,10 @@ async function fetchPlayerData() {
 
   const [sourcesResponse, episodesResponse] = await Promise.all([
     fetch("/api/v1/player/sources", { headers: { Accept: "application/json" } }),
-    fetch(`/api/v1/player/episodes?${params}`, { headers: { Accept: "application/json" } }),
+    fetch(`/api/v1/${isAdminPage ? "admin" : "player"}/episodes?${params}`, { headers: { Accept: "application/json" } }),
   ]);
 
+  if (isAdminPage && episodesResponse.status === 401) showAdminLogin(adminCopy.expired);
   if (!sourcesResponse.ok || !episodesResponse.ok) {
     throw new Error(`player API returned ${sourcesResponse.status}/${episodesResponse.status}`);
   }
@@ -375,6 +393,24 @@ function renderEpisodeList() {
 
     const time = row.querySelector(".episode-time");
     renderEpisodeDuration(time, episode.durationSeconds);
+    if (isAdminPage && adminCSRF) {
+      row.classList.add("admin-episode-row");
+      const visibilityButton = document.createElement("button");
+      visibilityButton.type = "button";
+      visibilityButton.className = "admin-visibility";
+      row.classList.toggle("is-hidden", episode.hidden);
+      visibilityButton.textContent = episode.hidden ? adminCopy.restore : adminCopy.hide;
+      visibilityButton.setAttribute("aria-label", `${visibilityButton.textContent}: ${episode.title}`);
+      visibilityButton.disabled = adminBusy;
+      visibilityButton.addEventListener("click", () => setAdminVisibility(episode));
+      if (episode.hidden) {
+        const badge = document.createElement("span");
+        badge.className = "admin-hidden-badge";
+        badge.textContent = adminCopy.hidden;
+        title.prepend(badge);
+      }
+      row.append(visibilityButton);
+    }
     fragment.append(row);
   }
   elements.episodeList.append(fragment);
@@ -540,6 +576,7 @@ function normalizeEpisode(episode) {
   const durationSeconds = Number(episode.audio_duration_seconds);
   return {
     id: String(episode.id || ""),
+    hidden: episode.hidden === true,
     sourceID: String(episode.source_id || ""),
     title: String(episode.title || copy.untitled),
     audioURL: String(episode.audio_url || ""),
@@ -628,7 +665,7 @@ function applyLocale() {
     if (selected) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
     const targetPath = link.dataset.locale === "zh-CN" ? "/zh-cn" : "/en";
-    link.href = `${targetPath}${window.location.search}${window.location.hash}`;
+    link.href = `${isAdminPage ? "/admin" : ""}${targetPath}${window.location.search}${window.location.hash}`;
   }
 }
 
@@ -638,7 +675,7 @@ function updateGreeting() {
   if (hour >= 5 && hour < 11) greeting = copy.greetings[0];
   else if (hour >= 11 && hour < 14) greeting = copy.greetings[1];
   else if (hour >= 14 && hour < 18) greeting = copy.greetings[2];
-  elements.greeting.textContent = copy.greeting(greeting);
+  elements.greeting.textContent = isAdminPage ? (localeKey === "zh-CN" ? "播客管理" : "Manage podcasts") : copy.greeting(greeting);
 }
 
 function createDateOptions() {
@@ -916,6 +953,7 @@ function getMediaSession() {
 }
 
 function isDemoMode() {
+  if (isAdminPage) return false;
   return new URLSearchParams(window.location.search).get("demo") === "1";
 }
 
@@ -955,4 +993,114 @@ function demoEpisode(id, sourceID, title, originalPublishedAt, publishedAt = ori
     published_at: publishedAt,
     original_published_at: originalPublishedAt,
   };
+}
+
+async function setupAdmin() {
+  document.title = localeKey === "zh-CN" ? "播客管理" : "Manage podcasts";
+  const panel = document.createElement("section");
+  panel.className = "admin-panel";
+  panel.innerHTML = `<form id="admin-login" class="admin-login">
+    <h2>${adminCopy.login}</h2><p>${adminCopy.hint}</p>
+    <label for="admin-code">${adminCopy.code}</label>
+    <div class="admin-login-controls"><input id="admin-code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required />
+    <button type="submit">${adminCopy.login}</button></div>
+    </form><p id="admin-message" role="status" aria-live="polite"></p>
+    <button id="admin-logout" type="button" hidden>${adminCopy.logout}</button>`;
+  elements.dateTabs.before(panel);
+  const form = panel.querySelector("form");
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const button = form.querySelector("button");
+    button.disabled = true;
+    try {
+      const response = await fetch("/api/v1/admin/login", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: form.elements.code.value }),
+      });
+      form.elements.code.value = "";
+      if (!response.ok) {
+        adminMessage(response.status === 429 ? adminCopy.rateLimit : response.status === 401 ? adminCopy.loginError : adminCopy.error);
+        return;
+      }
+      adminCSRF = (await response.json()).csrf_token;
+      await showAdminPlayer();
+    } catch { adminMessage(adminCopy.error); }
+    finally { button.disabled = false; }
+  });
+  panel.querySelector("#admin-logout").addEventListener("click", async () => {
+    try {
+      const response = await adminFetch("/api/v1/admin/logout", { method: "POST" });
+      if (response.ok) showAdminLogin();
+      else if (response.status !== 401) adminMessage(adminCopy.error);
+    } catch { adminMessage(adminCopy.error); }
+  });
+  showAdminLogin();
+  try {
+    const response = await fetch("/api/v1/admin/session", { cache: "no-store" });
+    if (response.ok) {
+      adminCSRF = (await response.json()).csrf_token;
+      await showAdminPlayer();
+    } else if (response.status !== 401) adminMessage(adminCopy.error);
+  } catch { adminMessage(adminCopy.error); }
+}
+
+function adminMessage(message) {
+  document.querySelector("#admin-message").textContent = message;
+}
+function setAdminPlayerVisible(visible) {
+  const panel = document.querySelector(".admin-panel");
+  panel.classList.toggle("is-authenticated", visible);
+  document.body.classList.toggle("admin-locked", !visible);
+  if (visible) elements.dateTabs.before(panel);
+  else document.querySelector(".app-shell").append(panel);
+  for (const element of [elements.dateTabs, elements.sourceFilterSection, elements.episodeRegion, elements.playerDock]) element.hidden = !visible;
+  document.querySelector("#admin-login").hidden = visible;
+  document.querySelector("#admin-logout").hidden = !visible;
+}
+function showAdminLogin(message = "") {
+  adminCSRF = "";
+  window.clearInterval(adminSessionTimer);
+  elements.audio.pause();
+  setAdminPlayerVisible(false);
+  adminMessage(message);
+  document.querySelector("#admin-code").focus();
+}
+async function showAdminPlayer() {
+  setAdminPlayerVisible(true);
+  await loadPlayer();
+  if (!adminCSRF) return;
+  adminMessage("");
+  window.clearInterval(adminSessionTimer);
+  if (adminCSRF) adminSessionTimer = window.setInterval(checkAdminSession, 60_000);
+}
+async function adminFetch(url, options = {}) {
+  const response = await fetch(url, { ...options, cache: "no-store", headers: { ...options.headers, "X-CSRF-Token": adminCSRF } });
+  if (response.status === 401) showAdminLogin(adminCopy.expired);
+  return response;
+}
+async function checkAdminSession() {
+  if (!adminCSRF || document.hidden) return;
+  try { await adminFetch("/api/v1/admin/session"); } catch { /* Actions also verify the session. */ }
+}
+async function setAdminVisibility(episode) {
+  if (adminBusy || !adminCSRF) return;
+  adminBusy = true;
+  renderEpisodeList();
+  try {
+    const response = await adminFetch(`/api/v1/admin/episodes/${encodeURIComponent(episode.id)}/visibility`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hidden: !episode.hidden }),
+    });
+    if (!response.ok) {
+      if (response.status !== 401) adminMessage(adminCopy.error);
+      return;
+    }
+    episode.hidden = (await response.json()).hidden;
+    adminMessage("");
+  } catch { adminMessage(adminCopy.error); }
+  finally {
+    adminBusy = false;
+    renderEpisodeList();
+    const row = [...elements.episodeList.children].find((item) => item.dataset.episodeId === episode.id);
+    row?.querySelector(".admin-visibility")?.focus();
+  }
 }
