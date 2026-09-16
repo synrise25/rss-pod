@@ -174,7 +174,7 @@ const state = {
   activeDate: dateOptions[0].key,
   activeSource: "all",
   currentEpisodeID: null,
-  speed: isDemoMode() ? 1.2 : readStoredNumber(SPEED_KEY, 1.2),
+  speed: isDemoMode() ? 1 : readStoredNumber(SPEED_KEY, 1),
   pendingResume: isDemoMode() ? null : readResumeState(),
   restoringResume: false,
 };
