@@ -364,8 +364,23 @@ func (s *Server) retryEpisode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if status != "failed" {
-		writeError(w, http.StatusConflict, "only failed episodes can be retried")
+	if status != "failed" && status != "retrying" {
+		writeError(w, http.StatusConflict, "only failed or orphaned retrying episodes can be retried")
+		return
+	}
+	var activeJob bool
+	if err := tx.QueryRow(r.Context(), `
+		SELECT EXISTS (
+			SELECT 1 FROM river_job
+			WHERE args->>'episode_id' = $1
+			  AND state IN ('available', 'pending', 'retryable', 'running', 'scheduled')
+		)
+	`, id.String()).Scan(&activeJob); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if activeJob {
+		writeError(w, http.StatusConflict, "episode already has an active job")
 		return
 	}
 

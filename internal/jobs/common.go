@@ -24,10 +24,7 @@ func permanent(format string, args ...any) error {
 func finishEpisodeAttempt(ctx context.Context, pool *pgxpool.Pool, episodeID string, attempt, maxAttempts int, workErr error) error {
 	var permanentErr *permanentError
 	isPermanent := errors.As(workErr, &permanentErr)
-	status := "retrying"
-	if isPermanent || attempt >= maxAttempts {
-		status = "failed"
-	}
+	status := episodeFailureStatus(ctx, isPermanent, attempt, maxAttempts)
 	updateCtx, cancel := episodeFailureUpdateContext(ctx)
 	defer cancel()
 	if _, err := pool.Exec(updateCtx, `
@@ -39,6 +36,16 @@ func finishEpisodeAttempt(ctx context.Context, pool *pgxpool.Pool, episodeID str
 		return river.JobCancel(workErr)
 	}
 	return workErr
+}
+
+func episodeFailureStatus(ctx context.Context, isPermanent bool, attempt, maxAttempts int) string {
+	// River permanently cancels a remotely cancelled job instead of scheduling
+	// another attempt. Keep the business state consistent with that terminal
+	// queue state so the episode can be retried through the management API.
+	if isPermanent || attempt >= maxAttempts || errors.Is(context.Cause(ctx), river.ErrJobCancelledRemotely) {
+		return "failed"
+	}
+	return "retrying"
 }
 
 func episodeFailureUpdateContext(ctx context.Context) (context.Context, context.CancelFunc) {
