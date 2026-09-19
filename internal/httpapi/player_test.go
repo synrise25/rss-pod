@@ -177,6 +177,22 @@ func TestManagementMuxDoesNotExposePlayerRoutes(t *testing.T) {
 	}
 }
 
+func TestPollSourceRejectsInvalidResumeIncomplete(t *testing.T) {
+	t.Parallel()
+
+	server := &Server{config: &config.Config{
+		Defaults: config.DefaultsConfig{Limits: config.LimitsConfig{MaxFeedItemsPerRun: 10}},
+		Sources:  []config.SourceConfig{{ID: "test", Enabled: true}},
+	}}
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/sources/test/poll?resume_incomplete=yes", nil)
+	request.SetPathValue("sourceID", "test")
+	server.pollSource(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d: %s", response.Code, http.StatusBadRequest, response.Body.String())
+	}
+}
+
 func TestParseOptionalRFC3339(t *testing.T) {
 	t.Parallel()
 

@@ -158,6 +158,14 @@ func (s *Server) pollSource(w http.ResponseWriter, r *http.Request) {
 		}
 		limit = parsed
 	}
+	resumeIncomplete := false
+	if value := r.URL.Query().Get("resume_incomplete"); value != "" {
+		if value != "true" && value != "false" {
+			writeError(w, http.StatusBadRequest, "resume_incomplete must be true or false")
+			return
+		}
+		resumeIncomplete = value == "true"
+	}
 
 	tx, err := s.pool.Begin(r.Context())
 	if err != nil {
@@ -165,7 +173,7 @@ func (s *Server) pollSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(r.Context())
-	queued, err := jobs.EnqueuePoll(r.Context(), tx, s.river, sourceID, limit)
+	queued, err := jobs.EnqueuePoll(r.Context(), tx, s.river, sourceID, limit, resumeIncomplete)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -348,44 +356,20 @@ func (s *Server) retryEpisode(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback(r.Context())
 
-	var status string
-	var documents, turns int
-	err = tx.QueryRow(r.Context(), `
-		SELECT e.status,
-		       (SELECT count(*) FROM documents d WHERE d.episode_id = e.id),
-		       (SELECT count(*) FROM script_turns t WHERE t.episode_id = e.id)
-		FROM episodes e WHERE e.id = $1 FOR UPDATE
-	`, id).Scan(&status, &documents, &turns)
-	if errors.Is(err, pgx.ErrNoRows) {
+	resumed, err := jobs.ResumeEpisode(r.Context(), tx, s.river, id.String())
+	if errors.Is(err, jobs.ErrEpisodeNotFound) {
 		writeError(w, http.StatusNotFound, "episode not found")
 		return
 	}
+	if errors.Is(err, jobs.ErrEpisodeNotRetryable) {
+		writeError(w, http.StatusConflict, "only failed or orphaned retrying/queued episodes can be retried")
+		return
+	}
+	if errors.Is(err, jobs.ErrEpisodeJobActive) {
+		writeError(w, http.StatusConflict, jobs.ErrEpisodeJobActive.Error())
+		return
+	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if status != "failed" {
-		writeError(w, http.StatusConflict, "only failed episodes can be retried")
-		return
-	}
-
-	var args river.JobArgs
-	switch {
-	case documents == 0:
-		args = jobs.ResolveContentArgs{EpisodeID: id.String()}
-	case turns == 0:
-		args = jobs.GenerateScriptArgs{EpisodeID: id.String()}
-	default:
-		args = jobs.GenerateTTSArgs{EpisodeID: id.String()}
-	}
-	inserted, err := s.river.InsertTx(r.Context(), tx, args, nil)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if _, err := tx.Exec(r.Context(), `
-		UPDATE episodes SET status = 'queued', error = '', updated_at = now() WHERE id = $1
-	`, id); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -395,8 +379,8 @@ func (s *Server) retryEpisode(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"episode_id": id,
-		"job_id":     inserted.Job.ID,
-		"job_kind":   args.Kind(),
+		"job_id":     resumed.JobID,
+		"job_kind":   resumed.JobKind,
 		"status":     "queued",
 	})
 }

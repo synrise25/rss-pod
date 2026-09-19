@@ -206,7 +206,7 @@ The main commands are:
 | --- | --- |
 | `check` | Validate configuration and external services |
 | `migrate` | Apply application and River database migrations |
-| `poll` | Explicitly enqueue one or more source polls |
+| `poll` | Explicitly enqueue one or more source polls; use `--resume-incomplete` to recover incomplete episodes |
 | `serve` | Run only the HTTP player and management listeners |
 | `worker` | Run selected River queues |
 | `run` | Run the HTTP service, scheduler, and every queue |

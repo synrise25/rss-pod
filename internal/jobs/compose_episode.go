@@ -3,6 +3,7 @@ package jobs
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"time"
@@ -21,13 +22,17 @@ type ComposeEpisodeWorker struct {
 }
 
 func (w *ComposeEpisodeWorker) Work(ctx context.Context, job *river.Job[ComposeEpisodeArgs]) error {
-	if err := w.compose(ctx, job.Args.EpisodeID); err != nil {
-		return finishEpisodeAttempt(ctx, w.Pool, job.Args.EpisodeID, job.Attempt, job.MaxAttempts, err)
+	if err := startEpisodeAttempt(ctx, w.Pool, job.Args.EpisodeID, job.ID, "composing"); err != nil {
+		return finishEpisodeAttempt(ctx, w.Pool, job.Args.EpisodeID, job.ID, job.Attempt, job.MaxAttempts,
+			fmt.Errorf("mark episode composing: %w", err))
+	}
+	if err := w.compose(ctx, job.Args.EpisodeID, job.ID); err != nil {
+		return finishEpisodeAttempt(ctx, w.Pool, job.Args.EpisodeID, job.ID, job.Attempt, job.MaxAttempts, err)
 	}
 	return nil
 }
 
-func (w *ComposeEpisodeWorker) compose(ctx context.Context, episodeID string) error {
+func (w *ComposeEpisodeWorker) compose(ctx context.Context, episodeID string, jobID int64) error {
 	var sourceID string
 	if err := w.Pool.QueryRow(ctx, `
 		SELECT e.source_id
@@ -87,18 +92,49 @@ func (w *ComposeEpisodeWorker) compose(ctx context.Context, episodeID string) er
 	if audio.Len() == 0 {
 		return fmt.Errorf("composed audio is empty")
 	}
-	key := fmt.Sprintf("sources/%s/episodes/%s.mp3", sourceID, episodeID)
+	key := episodeMediaObjectKey(sourceID, episodeID, jobID)
 	if err := w.Storage.PutMedia(ctx, key, "audio/mpeg", audio.Bytes()); err != nil {
 		return err
 	}
 	publicURL := w.Storage.PublicURL(key)
-	if _, err := w.Pool.Exec(ctx, `
+	tag, err := w.Pool.Exec(ctx, `
 		UPDATE episodes
 		SET status = 'published', audio_object_key = $2, audio_url = $3, audio_byte_size = $4,
 		    audio_duration_seconds = $5, error = '', updated_at = now(), published_at = now()
-		WHERE id = $1
-	`, episodeID, key, publicURL, audio.Len(), durationSeconds); err != nil {
-		return fmt.Errorf("publish episode: %w", err)
+		WHERE id = $1 AND active_job_id = $6
+	`, episodeID, key, publicURL, audio.Len(), durationSeconds, jobID)
+	if err != nil {
+		publishErr := fmt.Errorf("publish episode: %w", err)
+		verifyCtx, cancel := episodeFailureUpdateContext(ctx)
+		defer cancel()
+		var published bool
+		verifyErr := w.Pool.QueryRow(verifyCtx, `
+			SELECT status = 'published' AND audio_object_key = $2
+			FROM episodes WHERE id = $1
+		`, episodeID, key).Scan(&published)
+		if verifyErr == nil && published {
+			return nil
+		}
+		if verifyErr != nil {
+			return errors.Join(publishErr, fmt.Errorf("verify episode publication: %w", verifyErr))
+		}
+		return w.deleteRejectedMediaObject(ctx, key, publishErr)
+	}
+	if tag.RowsAffected() == 0 {
+		return w.deleteRejectedMediaObject(ctx, key, errEpisodeAttemptSuperseded)
 	}
 	return nil
+}
+
+func (w *ComposeEpisodeWorker) deleteRejectedMediaObject(ctx context.Context, key string, publicationErr error) error {
+	cleanupCtx, cancel := episodeFailureUpdateContext(ctx)
+	defer cancel()
+	if err := w.Storage.DeleteMedia(cleanupCtx, key); err != nil {
+		return errors.Join(publicationErr, fmt.Errorf("delete rejected media object: %w", err))
+	}
+	return publicationErr
+}
+
+func episodeMediaObjectKey(sourceID, episodeID string, jobID int64) string {
+	return fmt.Sprintf("sources/%s/episodes/%s/jobs/%d.mp3", sourceID, episodeID, jobID)
 }

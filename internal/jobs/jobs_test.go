@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/riverqueue/river"
+
 	"github.com/synrise25/rss-pod/internal/config"
 )
 
@@ -35,6 +37,47 @@ func TestEpisodeFailureUpdateContextSurvivesParentCancellation(t *testing.T) {
 	remaining := time.Until(deadline)
 	if remaining <= 0 || remaining > episodeFailureUpdateTimeout {
 		t.Fatalf("cleanup context remaining timeout = %s", remaining)
+	}
+}
+
+func TestEpisodeFailureStatus(t *testing.T) {
+	t.Parallel()
+
+	remoteCancelCtx, cancelRemote := context.WithCancelCause(context.Background())
+	cancelRemote(river.ErrJobCancelledRemotely)
+
+	for _, test := range []struct {
+		name        string
+		ctx         context.Context
+		permanent   bool
+		attempt     int
+		maxAttempts int
+		want        string
+	}{
+		{name: "retryable", ctx: context.Background(), attempt: 1, maxAttempts: 5, want: "retrying"},
+		{name: "attempts exhausted", ctx: context.Background(), attempt: 5, maxAttempts: 5, want: "failed"},
+		{name: "permanent", ctx: context.Background(), permanent: true, attempt: 1, maxAttempts: 5, want: "failed"},
+		{name: "remotely cancelled", ctx: remoteCancelCtx, attempt: 1, maxAttempts: 5, want: "failed"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if got := episodeFailureStatus(test.ctx, test.permanent, test.attempt, test.maxAttempts); got != test.want {
+				t.Fatalf("episodeFailureStatus() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestGeneratedObjectKeysAreScopedToJob(t *testing.T) {
+	const (
+		episodeID = "episode-id"
+		sourceID  = "source-id"
+	)
+	if first, second := audioSegmentObjectKey(episodeID, 10, 2), audioSegmentObjectKey(episodeID, 11, 2); first == second {
+		t.Fatalf("audio segment keys collide across jobs: %q", first)
+	}
+	if first, second := episodeMediaObjectKey(sourceID, episodeID, 10), episodeMediaObjectKey(sourceID, episodeID, 11); first == second {
+		t.Fatalf("episode media keys collide across jobs: %q", first)
 	}
 }
 

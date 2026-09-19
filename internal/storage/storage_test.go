@@ -48,3 +48,32 @@ func TestPutPrivateHonorsOperationTimeout(t *testing.T) {
 		t.Fatalf("PutPrivate took %s, want less than 1s", elapsed)
 	}
 }
+
+func TestDeletePrivateHonorsOperationTimeout(t *testing.T) {
+	minioClient, err := minio.New("storage.test", &minio.Options{
+		Creds:     credentials.NewStaticV4("access", "secret", ""),
+		Secure:    true,
+		Region:    "us-east-1",
+		Transport: blockingTransport{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &Client{
+		client:  minioClient,
+		config:  config.StorageConfig{PrivateBucket: "private"},
+		timeout: 50 * time.Millisecond,
+	}
+
+	started := time.Now()
+	err = client.DeletePrivate(context.Background(), "segment.mp3")
+	if err == nil {
+		t.Fatal("DeletePrivate unexpectedly succeeded")
+	}
+	if !strings.Contains(err.Error(), context.DeadlineExceeded.Error()) {
+		t.Fatalf("DeletePrivate error = %v, want context deadline exceeded", err)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("DeletePrivate took %s, want less than 1s", elapsed)
+	}
+}

@@ -60,7 +60,7 @@ func TestEnqueuePollsValidatesBatchBeforeConnecting(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if _, err := EnqueuePolls(context.Background(), cfg, sources, test.times, test.limit); err == nil {
+			if _, err := EnqueuePolls(context.Background(), cfg, sources, test.times, test.limit, false); err == nil {
 				t.Fatal("EnqueuePolls() unexpectedly succeeded")
 			}
 		})

@@ -114,12 +114,14 @@ CREATE TABLE IF NOT EXISTS episodes (
     audio_byte_size bigint NOT NULL DEFAULT 0,
     audio_duration_seconds integer NOT NULL DEFAULT 0,
     error          text NOT NULL DEFAULT '',
+    active_job_id  bigint,
     created_at     timestamptz NOT NULL DEFAULT now(),
     updated_at     timestamptz NOT NULL DEFAULT now(),
     published_at   timestamptz
 );
 
 ALTER TABLE episodes ADD COLUMN IF NOT EXISTS hidden_at timestamptz;
+ALTER TABLE episodes ADD COLUMN IF NOT EXISTS active_job_id bigint;
 
 CREATE INDEX IF NOT EXISTS episodes_source_created_idx
     ON episodes (source_id, created_at DESC);

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 )
@@ -14,6 +15,8 @@ type permanentError struct{ err error }
 
 const episodeFailureUpdateTimeout = 5 * time.Second
 
+var errEpisodeAttemptSuperseded = errors.New("episode attempt was superseded by a newer job")
+
 func (e *permanentError) Error() string { return e.err.Error() }
 func (e *permanentError) Unwrap() error { return e.err }
 
@@ -21,24 +24,68 @@ func permanent(format string, args ...any) error {
 	return &permanentError{err: fmt.Errorf(format, args...)}
 }
 
-func finishEpisodeAttempt(ctx context.Context, pool *pgxpool.Pool, episodeID string, attempt, maxAttempts int, workErr error) error {
+func finishEpisodeAttempt(ctx context.Context, pool *pgxpool.Pool, episodeID string, jobID int64, attempt, maxAttempts int, workErr error) error {
+	if errors.Is(workErr, errEpisodeAttemptSuperseded) {
+		return river.JobCancel(workErr)
+	}
 	var permanentErr *permanentError
 	isPermanent := errors.As(workErr, &permanentErr)
-	status := "retrying"
-	if isPermanent || attempt >= maxAttempts {
-		status = "failed"
-	}
+	status := episodeFailureStatus(ctx, isPermanent, attempt, maxAttempts)
 	updateCtx, cancel := episodeFailureUpdateContext(ctx)
 	defer cancel()
 	if _, err := pool.Exec(updateCtx, `
-		UPDATE episodes SET status = $2, error = $3, updated_at = now() WHERE id = $1
-	`, episodeID, status, workErr.Error()); err != nil {
+		UPDATE episodes
+		SET status = $3, error = $4, active_job_id = $2, updated_at = now()
+		WHERE id = $1 AND (active_job_id IS NULL OR active_job_id = $2)
+	`, episodeID, jobID, status, workErr.Error()); err != nil {
 		return fmt.Errorf("%v; update episode failure: %w", workErr, err)
 	}
 	if isPermanent {
 		return river.JobCancel(workErr)
 	}
 	return workErr
+}
+
+func startEpisodeAttempt(ctx context.Context, pool *pgxpool.Pool, episodeID string, jobID int64, status string) error {
+	tag, err := pool.Exec(ctx, `
+		UPDATE episodes
+		SET status = $3, error = '', active_job_id = $2, updated_at = now()
+		WHERE id = $1 AND (active_job_id IS NULL OR active_job_id = $2)
+	`, episodeID, jobID, status)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return errEpisodeAttemptSuperseded
+	}
+	return nil
+}
+
+func lockEpisodeAttempt(ctx context.Context, tx pgx.Tx, episodeID string, jobID int64) error {
+	var isOwner bool
+	if err := tx.QueryRow(ctx, `
+		SELECT COALESCE(active_job_id = $2, false)
+		FROM episodes WHERE id = $1 FOR UPDATE
+	`, episodeID, jobID).Scan(&isOwner); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errEpisodeAttemptSuperseded
+		}
+		return err
+	}
+	if !isOwner {
+		return errEpisodeAttemptSuperseded
+	}
+	return nil
+}
+
+func episodeFailureStatus(ctx context.Context, isPermanent bool, attempt, maxAttempts int) string {
+	// River permanently cancels a remotely cancelled job instead of scheduling
+	// another attempt. Keep the business state consistent with that terminal
+	// queue state so the episode can be retried through the management API.
+	if isPermanent || attempt >= maxAttempts || errors.Is(context.Cause(ctx), river.ErrJobCancelledRemotely) {
+		return "failed"
+	}
+	return "retrying"
 }
 
 func episodeFailureUpdateContext(ctx context.Context) (context.Context, context.CancelFunc) {

@@ -26,6 +26,8 @@ type GenerateTTSWorker struct {
 	River   *river.Client[pgx.Tx]
 }
 
+var errArtifactPublicationUnknown = errors.New("artifact publication outcome is unknown")
+
 type scriptTurn struct {
 	Position   int
 	SpeakerID  string
@@ -41,18 +43,17 @@ type episodeDialogue struct {
 }
 
 func (w *GenerateTTSWorker) Work(ctx context.Context, job *river.Job[GenerateTTSArgs]) error {
-	if _, err := w.Pool.Exec(ctx, `
-		UPDATE episodes SET status = 'generating_tts', error = '', updated_at = now() WHERE id = $1
-	`, job.Args.EpisodeID); err != nil {
-		return fmt.Errorf("mark episode generating TTS: %w", err)
+	if err := startEpisodeAttempt(ctx, w.Pool, job.Args.EpisodeID, job.ID, "generating_tts"); err != nil {
+		return finishEpisodeAttempt(ctx, w.Pool, job.Args.EpisodeID, job.ID, job.Attempt, job.MaxAttempts,
+			fmt.Errorf("mark episode generating TTS: %w", err))
 	}
-	if err := w.generate(ctx, job.Args.EpisodeID); err != nil {
-		return finishEpisodeAttempt(ctx, w.Pool, job.Args.EpisodeID, job.Attempt, job.MaxAttempts, err)
+	if err := w.generate(ctx, job.Args.EpisodeID, job.ID); err != nil {
+		return finishEpisodeAttempt(ctx, w.Pool, job.Args.EpisodeID, job.ID, job.Attempt, job.MaxAttempts, err)
 	}
 	return nil
 }
 
-func (w *GenerateTTSWorker) generate(ctx context.Context, episodeID string) error {
+func (w *GenerateTTSWorker) generate(ctx context.Context, episodeID string, jobID int64) error {
 	dialogue, err := w.loadDialogue(ctx, episodeID)
 	if err != nil {
 		return err
@@ -66,11 +67,11 @@ func (w *GenerateTTSWorker) generate(ctx context.Context, episodeID string) erro
 		return err
 	}
 	if turns[0].Talker != "" {
-		if err := w.generateMultiTalker(ctx, episodeID, turns, existing); err != nil {
+		if err := w.generateMultiTalker(ctx, episodeID, jobID, turns, existing); err != nil {
 			return err
 		}
 	} else {
-		if err := w.generateSingleTalker(ctx, episodeID, dialogue.DialogueProfile, turns, existing); err != nil {
+		if err := w.generateSingleTalker(ctx, episodeID, jobID, dialogue.DialogueProfile, turns, existing); err != nil {
 			return err
 		}
 	}
@@ -80,13 +81,23 @@ func (w *GenerateTTSWorker) generate(ctx context.Context, episodeID string) erro
 		return fmt.Errorf("begin TTS completion transaction: %w", err)
 	}
 	defer tx.Rollback(ctx)
-	if _, err := tx.Exec(ctx, `
-		UPDATE episodes SET status = 'composing', error = '', updated_at = now() WHERE id = $1
-	`, episodeID); err != nil {
+	if err := lockEpisodeAttempt(ctx, tx, episodeID, jobID); err != nil {
+		return err
+	}
+	inserted, err := w.River.InsertTx(ctx, tx, ComposeEpisodeArgs{EpisodeID: episodeID}, nil)
+	if err != nil {
+		return fmt.Errorf("enqueue episode composition: %w", err)
+	}
+	tag, err := tx.Exec(ctx, `
+		UPDATE episodes
+		SET status = 'composing', error = '', active_job_id = $3, updated_at = now()
+		WHERE id = $1 AND active_job_id = $2
+	`, episodeID, jobID, inserted.Job.ID)
+	if err != nil {
 		return fmt.Errorf("mark episode composing: %w", err)
 	}
-	if _, err := w.River.InsertTx(ctx, tx, ComposeEpisodeArgs{EpisodeID: episodeID}, nil); err != nil {
-		return fmt.Errorf("enqueue episode composition: %w", err)
+	if tag.RowsAffected() == 0 {
+		return errEpisodeAttemptSuperseded
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit TTS completion: %w", err)
@@ -94,7 +105,7 @@ func (w *GenerateTTSWorker) generate(ctx context.Context, episodeID string) erro
 	return nil
 }
 
-func (w *GenerateTTSWorker) generateSingleTalker(ctx context.Context, episodeID string, dialogue config.DialogueProfile, turns []scriptTurn, existing map[int]string) error {
+func (w *GenerateTTSWorker) generateSingleTalker(ctx context.Context, episodeID string, jobID int64, dialogue config.DialogueProfile, turns []scriptTurn, existing map[int]string) error {
 	for _, turn := range turns {
 		if turn.Talker != "" {
 			return permanent("episode mixes MultiTalker and single-talker voices")
@@ -110,26 +121,18 @@ func (w *GenerateTTSWorker) generateSingleTalker(ctx context.Context, episodeID 
 		if err != nil {
 			return err
 		}
-		key := fmt.Sprintf("episodes/%s/segments/%04d.mp3", episodeID, turn.Position)
+		key := audioSegmentObjectKey(episodeID, jobID, turn.Position)
 		if err := w.Storage.PutPrivate(ctx, key, "audio/mpeg", audio); err != nil {
 			return err
 		}
-		if _, err := w.Pool.Exec(ctx, `
-			INSERT INTO audio_segments (episode_id, position, tts_service, object_key, byte_size)
-			VALUES ($1, $2, $3, $4, $5)
-			ON CONFLICT (episode_id, position) DO UPDATE SET
-			    tts_service = EXCLUDED.tts_service,
-			    object_key = EXCLUDED.object_key,
-			    byte_size = EXCLUDED.byte_size,
-			    created_at = now()
-		`, episodeID, turn.Position, turn.TTSService, key, len(audio)); err != nil {
-			return fmt.Errorf("store audio segment: %w", err)
+		if err := storeAudioSegment(ctx, w.Pool, episodeID, jobID, turn.Position, turn.TTSService, key, len(audio)); err != nil {
+			return deleteRejectedPrivateObject(ctx, w.Storage, key, fmt.Errorf("store audio segment: %w", err))
 		}
 	}
 	return nil
 }
 
-func (w *GenerateTTSWorker) generateMultiTalker(ctx context.Context, episodeID string, turns []scriptTurn, existing map[int]string) error {
+func (w *GenerateTTSWorker) generateMultiTalker(ctx context.Context, episodeID string, jobID int64, turns []scriptTurn, existing map[int]string) error {
 	const position = 0
 	serviceName := turns[0].TTSService
 	voiceName := turns[0].Voice
@@ -157,11 +160,39 @@ func (w *GenerateTTSWorker) generateMultiTalker(ctx context.Context, episodeID s
 	if err != nil {
 		return classifyAzureError(err)
 	}
-	key := fmt.Sprintf("episodes/%s/segments/%04d.mp3", episodeID, position)
+	key := audioSegmentObjectKey(episodeID, jobID, position)
 	if err := w.Storage.PutPrivate(ctx, key, "audio/mpeg", audio); err != nil {
 		return err
 	}
-	if _, err := w.Pool.Exec(ctx, `
+	if err := storeAudioSegment(ctx, w.Pool, episodeID, jobID, position, serviceName, key, len(audio)); err != nil {
+		return deleteRejectedPrivateObject(ctx, w.Storage, key, fmt.Errorf("store MultiTalker audio segment: %w", err))
+	}
+	return nil
+}
+
+func audioSegmentObjectKey(episodeID string, jobID int64, position int) string {
+	return fmt.Sprintf("episodes/%s/jobs/%d/segments/%04d.mp3", episodeID, jobID, position)
+}
+
+func storeAudioSegment(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	episodeID string,
+	jobID int64,
+	position int,
+	serviceName string,
+	key string,
+	byteSize int,
+) error {
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err := lockEpisodeAttempt(ctx, tx, episodeID, jobID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
 		INSERT INTO audio_segments (episode_id, position, tts_service, object_key, byte_size)
 		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (episode_id, position) DO UPDATE SET
@@ -169,10 +200,40 @@ func (w *GenerateTTSWorker) generateMultiTalker(ctx context.Context, episodeID s
 		    object_key = EXCLUDED.object_key,
 		    byte_size = EXCLUDED.byte_size,
 		    created_at = now()
-	`, episodeID, position, serviceName, key, len(audio)); err != nil {
-		return fmt.Errorf("store MultiTalker audio segment: %w", err)
+	`, episodeID, position, serviceName, key, byteSize); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		verifyCtx, cancel := episodeFailureUpdateContext(ctx)
+		defer cancel()
+		var published bool
+		verifyErr := pool.QueryRow(verifyCtx, `
+			SELECT EXISTS (
+				SELECT 1 FROM audio_segments
+				WHERE episode_id = $1 AND position = $2 AND object_key = $3
+			)
+		`, episodeID, position, key).Scan(&published)
+		if verifyErr == nil && published {
+			return nil
+		}
+		if verifyErr != nil {
+			return errors.Join(err, fmt.Errorf("%w: verify audio segment publication: %v", errArtifactPublicationUnknown, verifyErr))
+		}
+		return err
 	}
 	return nil
+}
+
+func deleteRejectedPrivateObject(ctx context.Context, client *storage.Client, key string, publicationErr error) error {
+	if errors.Is(publicationErr, errArtifactPublicationUnknown) {
+		return publicationErr
+	}
+	cleanupCtx, cancel := episodeFailureUpdateContext(ctx)
+	defer cancel()
+	if err := client.DeletePrivate(cleanupCtx, key); err != nil {
+		return errors.Join(publicationErr, fmt.Errorf("delete rejected private object: %w", err))
+	}
+	return publicationErr
 }
 
 func (w *GenerateTTSWorker) loadDialogue(ctx context.Context, episodeID string) (episodeDialogue, error) {

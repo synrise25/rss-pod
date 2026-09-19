@@ -36,18 +36,17 @@ type resolvedDocument struct {
 }
 
 func (w *ResolveContentWorker) Work(ctx context.Context, job *river.Job[ResolveContentArgs]) error {
-	if _, err := w.Pool.Exec(ctx, `
-		UPDATE episodes SET status = 'resolving_content', error = '', updated_at = now() WHERE id = $1
-	`, job.Args.EpisodeID); err != nil {
-		return fmt.Errorf("mark episode resolving content: %w", err)
+	if err := startEpisodeAttempt(ctx, w.Pool, job.Args.EpisodeID, job.ID, "resolving_content"); err != nil {
+		return finishEpisodeAttempt(ctx, w.Pool, job.Args.EpisodeID, job.ID, job.Attempt, job.MaxAttempts,
+			fmt.Errorf("mark episode resolving content: %w", err))
 	}
-	if err := w.resolve(ctx, job.Args.EpisodeID); err != nil {
-		return finishEpisodeAttempt(ctx, w.Pool, job.Args.EpisodeID, job.Attempt, job.MaxAttempts, err)
+	if err := w.resolve(ctx, job.Args.EpisodeID, job.ID); err != nil {
+		return finishEpisodeAttempt(ctx, w.Pool, job.Args.EpisodeID, job.ID, job.Attempt, job.MaxAttempts, err)
 	}
 	return nil
 }
 
-func (w *ResolveContentWorker) resolve(ctx context.Context, episodeID string) error {
+func (w *ResolveContentWorker) resolve(ctx context.Context, episodeID string, jobID int64) error {
 	var sourceID, title, link, description, itemContent string
 	if err := w.Pool.QueryRow(ctx, `
 		SELECT e.source_id, f.title, f.link, f.description, f.content
@@ -103,6 +102,9 @@ func (w *ResolveContentWorker) resolve(ctx context.Context, episodeID string) er
 		return fmt.Errorf("begin content transaction: %w", err)
 	}
 	defer tx.Rollback(ctx)
+	if err := lockEpisodeAttempt(ctx, tx, episodeID, jobID); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(ctx, `DELETE FROM documents WHERE episode_id = $1`, episodeID); err != nil {
 		return fmt.Errorf("clear documents: %w", err)
 	}
@@ -114,13 +116,20 @@ func (w *ResolveContentWorker) resolve(ctx context.Context, episodeID string) er
 			return fmt.Errorf("store document: %w", err)
 		}
 	}
-	if _, err := tx.Exec(ctx, `
-		UPDATE episodes SET status = 'content_ready', error = '', updated_at = now() WHERE id = $1
-	`, episodeID); err != nil {
+	inserted, err := w.River.InsertTx(ctx, tx, GenerateScriptArgs{EpisodeID: episodeID}, nil)
+	if err != nil {
+		return fmt.Errorf("enqueue script generation: %w", err)
+	}
+	tag, err := tx.Exec(ctx, `
+		UPDATE episodes
+		SET status = 'content_ready', error = '', active_job_id = $3, updated_at = now()
+		WHERE id = $1 AND active_job_id = $2
+	`, episodeID, jobID, inserted.Job.ID)
+	if err != nil {
 		return fmt.Errorf("mark content ready: %w", err)
 	}
-	if _, err := w.River.InsertTx(ctx, tx, GenerateScriptArgs{EpisodeID: episodeID}, nil); err != nil {
-		return fmt.Errorf("enqueue script generation: %w", err)
+	if tag.RowsAffected() == 0 {
+		return errEpisodeAttemptSuperseded
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit content: %w", err)
