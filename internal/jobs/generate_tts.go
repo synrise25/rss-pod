@@ -41,19 +41,17 @@ type episodeDialogue struct {
 }
 
 func (w *GenerateTTSWorker) Work(ctx context.Context, job *river.Job[GenerateTTSArgs]) error {
-	if _, err := w.Pool.Exec(ctx, `
-		UPDATE episodes SET status = 'generating_tts', error = '', updated_at = now() WHERE id = $1
-	`, job.Args.EpisodeID); err != nil {
+	if err := startEpisodeAttempt(ctx, w.Pool, job.Args.EpisodeID, job.ID, "generating_tts"); err != nil {
 		return finishEpisodeAttempt(ctx, w.Pool, job.Args.EpisodeID, job.ID, job.Attempt, job.MaxAttempts,
 			fmt.Errorf("mark episode generating TTS: %w", err))
 	}
-	if err := w.generate(ctx, job.Args.EpisodeID); err != nil {
+	if err := w.generate(ctx, job.Args.EpisodeID, job.ID); err != nil {
 		return finishEpisodeAttempt(ctx, w.Pool, job.Args.EpisodeID, job.ID, job.Attempt, job.MaxAttempts, err)
 	}
 	return nil
 }
 
-func (w *GenerateTTSWorker) generate(ctx context.Context, episodeID string) error {
+func (w *GenerateTTSWorker) generate(ctx context.Context, episodeID string, jobID int64) error {
 	dialogue, err := w.loadDialogue(ctx, episodeID)
 	if err != nil {
 		return err
@@ -81,13 +79,20 @@ func (w *GenerateTTSWorker) generate(ctx context.Context, episodeID string) erro
 		return fmt.Errorf("begin TTS completion transaction: %w", err)
 	}
 	defer tx.Rollback(ctx)
-	if _, err := tx.Exec(ctx, `
-		UPDATE episodes SET status = 'composing', error = '', updated_at = now() WHERE id = $1
-	`, episodeID); err != nil {
+	inserted, err := w.River.InsertTx(ctx, tx, ComposeEpisodeArgs{EpisodeID: episodeID}, nil)
+	if err != nil {
+		return fmt.Errorf("enqueue episode composition: %w", err)
+	}
+	tag, err := tx.Exec(ctx, `
+		UPDATE episodes
+		SET status = 'composing', error = '', active_job_id = $3, updated_at = now()
+		WHERE id = $1 AND active_job_id = $2
+	`, episodeID, jobID, inserted.Job.ID)
+	if err != nil {
 		return fmt.Errorf("mark episode composing: %w", err)
 	}
-	if _, err := w.River.InsertTx(ctx, tx, ComposeEpisodeArgs{EpisodeID: episodeID}, nil); err != nil {
-		return fmt.Errorf("enqueue episode composition: %w", err)
+	if tag.RowsAffected() == 0 {
+		return errEpisodeAttemptSuperseded
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit TTS completion: %w", err)

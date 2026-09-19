@@ -14,6 +14,8 @@ type permanentError struct{ err error }
 
 const episodeFailureUpdateTimeout = 5 * time.Second
 
+var errEpisodeAttemptSuperseded = errors.New("episode attempt was superseded by a newer job")
+
 func (e *permanentError) Error() string { return e.err.Error() }
 func (e *permanentError) Unwrap() error { return e.err }
 
@@ -22,47 +24,40 @@ func permanent(format string, args ...any) error {
 }
 
 func finishEpisodeAttempt(ctx context.Context, pool *pgxpool.Pool, episodeID string, jobID int64, attempt, maxAttempts int, workErr error) error {
+	if errors.Is(workErr, errEpisodeAttemptSuperseded) {
+		return river.JobCancel(workErr)
+	}
 	var permanentErr *permanentError
 	isPermanent := errors.As(workErr, &permanentErr)
 	status := episodeFailureStatus(ctx, isPermanent, attempt, maxAttempts)
 	updateCtx, cancel := episodeFailureUpdateContext(ctx)
 	defer cancel()
-	tx, err := pool.Begin(updateCtx)
-	if err != nil {
-		return fmt.Errorf("%v; begin episode failure update: %w", workErr, err)
-	}
-	defer tx.Rollback(updateCtx)
-	var lockedID string
-	if err := tx.QueryRow(updateCtx, `
-		SELECT id::text FROM episodes WHERE id = $1 FOR UPDATE
-	`, episodeID).Scan(&lockedID); err != nil {
-		return fmt.Errorf("%v; lock episode for failure update: %w", workErr, err)
-	}
-	var replacementActive bool
-	if err := tx.QueryRow(updateCtx, `
-		SELECT EXISTS (
-			SELECT 1 FROM river_job
-			WHERE args->>'episode_id' = $1
-			  AND id <> $2
-			  AND state IN ('available', 'pending', 'retryable', 'running', 'scheduled')
-		)
-	`, episodeID, jobID).Scan(&replacementActive); err != nil {
-		return fmt.Errorf("%v; check replacement episode job: %w", workErr, err)
-	}
-	if !replacementActive {
-		if _, err := tx.Exec(updateCtx, `
-			UPDATE episodes SET status = $2, error = $3, updated_at = now() WHERE id = $1
-		`, episodeID, status, workErr.Error()); err != nil {
-			return fmt.Errorf("%v; update episode failure: %w", workErr, err)
-		}
-	}
-	if err := tx.Commit(updateCtx); err != nil {
+	if _, err := pool.Exec(updateCtx, `
+		UPDATE episodes
+		SET status = $3, error = $4, active_job_id = $2, updated_at = now()
+		WHERE id = $1 AND (active_job_id IS NULL OR active_job_id = $2)
+	`, episodeID, jobID, status, workErr.Error()); err != nil {
 		return fmt.Errorf("%v; update episode failure: %w", workErr, err)
 	}
 	if isPermanent {
 		return river.JobCancel(workErr)
 	}
 	return workErr
+}
+
+func startEpisodeAttempt(ctx context.Context, pool *pgxpool.Pool, episodeID string, jobID int64, status string) error {
+	tag, err := pool.Exec(ctx, `
+		UPDATE episodes
+		SET status = $3, error = '', active_job_id = $2, updated_at = now()
+		WHERE id = $1 AND (active_job_id IS NULL OR active_job_id = $2)
+	`, episodeID, jobID, status)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return errEpisodeAttemptSuperseded
+	}
+	return nil
 }
 
 func episodeFailureStatus(ctx context.Context, isPermanent bool, attempt, maxAttempts int) string {

@@ -45,19 +45,17 @@ type llmDocument struct {
 }
 
 func (w *GenerateScriptWorker) Work(ctx context.Context, job *river.Job[GenerateScriptArgs]) error {
-	if _, err := w.Pool.Exec(ctx, `
-		UPDATE episodes SET status = 'generating_script', error = '', updated_at = now() WHERE id = $1
-	`, job.Args.EpisodeID); err != nil {
+	if err := startEpisodeAttempt(ctx, w.Pool, job.Args.EpisodeID, job.ID, "generating_script"); err != nil {
 		return finishEpisodeAttempt(ctx, w.Pool, job.Args.EpisodeID, job.ID, job.Attempt, job.MaxAttempts,
 			fmt.Errorf("mark episode generating script: %w", err))
 	}
-	if err := w.generate(ctx, job.Args.EpisodeID); err != nil {
+	if err := w.generate(ctx, job.Args.EpisodeID, job.ID); err != nil {
 		return finishEpisodeAttempt(ctx, w.Pool, job.Args.EpisodeID, job.ID, job.Attempt, job.MaxAttempts, err)
 	}
 	return nil
 }
 
-func (w *GenerateScriptWorker) generate(ctx context.Context, episodeID string) error {
+func (w *GenerateScriptWorker) generate(ctx context.Context, episodeID string, jobID int64) error {
 	var sourceID, episodeTitle string
 	if err := w.Pool.QueryRow(ctx, `SELECT source_id, title FROM episodes WHERE id = $1`, episodeID).Scan(&sourceID, &episodeTitle); err != nil {
 		return fmt.Errorf("load episode: %w", err)
@@ -145,15 +143,21 @@ func (w *GenerateScriptWorker) generate(ctx context.Context, episodeID string) e
 			return fmt.Errorf("store script turn: %w", err)
 		}
 	}
-	if _, err := tx.Exec(ctx, `
+	inserted, err := w.River.InsertTx(ctx, tx, GenerateTTSArgs{EpisodeID: episodeID}, nil)
+	if err != nil {
+		return fmt.Errorf("enqueue TTS generation: %w", err)
+	}
+	tag, err := tx.Exec(ctx, `
 		UPDATE episodes
-		SET title = $2, status = 'script_ready', llm_service = $3, error = '', updated_at = now()
-		WHERE id = $1
-	`, episodeID, script.Title, usedService); err != nil {
+		SET title = $3, status = 'script_ready', llm_service = $4, error = '',
+		    active_job_id = $5, updated_at = now()
+		WHERE id = $1 AND active_job_id = $2
+	`, episodeID, jobID, script.Title, usedService, inserted.Job.ID)
+	if err != nil {
 		return fmt.Errorf("mark script ready: %w", err)
 	}
-	if _, err := w.River.InsertTx(ctx, tx, GenerateTTSArgs{EpisodeID: episodeID}, nil); err != nil {
-		return fmt.Errorf("enqueue TTS generation: %w", err)
+	if tag.RowsAffected() == 0 {
+		return errEpisodeAttemptSuperseded
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit script: %w", err)

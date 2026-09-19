@@ -72,7 +72,7 @@ func seedRetryingEpisode(t *testing.T, pool *pgxpool.Pool, externalID string) st
 	return id
 }
 
-func TestStaleCancelledWorkerDoesNotOverwriteResumedEpisodeIntegration(t *testing.T) {
+func TestStaleCancelledWorkerDoesNotOverwriteCompletedResumedEpisodeIntegration(t *testing.T) {
 	pool := jobsTestPool(t)
 	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
 	if err != nil {
@@ -91,10 +91,19 @@ func TestStaleCancelledWorkerDoesNotOverwriteResumedEpisodeIntegration(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ResumeEpisode(ctx, tx, client, episodeID); err != nil {
+	resumed, err := ResumeEpisode(ctx, tx, client, episodeID)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// Model the replacement finishing and its River row later being cleaned up.
+	// The persisted episode owner must still reject the stale worker's write.
+	if _, err := pool.Exec(ctx, `DELETE FROM river_job WHERE id = $1`, resumed.JobID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE episodes SET status = 'published' WHERE id = $1`, episodeID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -108,8 +117,64 @@ func TestStaleCancelledWorkerDoesNotOverwriteResumedEpisodeIntegration(t *testin
 	if err := pool.QueryRow(ctx, `SELECT status FROM episodes WHERE id=$1`, episodeID).Scan(&status); err != nil {
 		t.Fatal(err)
 	}
+	if status != "published" {
+		t.Fatalf("episode status = %q, want published", status)
+	}
+}
+
+func TestSupersededWorkerCannotOverwriteResumedQueuedStatusIntegration(t *testing.T) {
+	pool := jobsTestPool(t)
+	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	episodeID := seedRetryingEpisode(t, pool, "superseded-setup")
+	oldJob, err := client.Insert(ctx, ResolveContentArgs{EpisodeID: episodeID}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
+		UPDATE episodes SET status = 'failed', active_job_id = $2 WHERE id = $1
+	`, episodeID, oldJob.Job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.JobCancel(ctx, oldJob.Job.ID); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	resumed, err := ResumeEpisode(ctx, tx, client, episodeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	job := &river.Job[ResolveContentArgs]{
+		JobRow: &rivertype.JobRow{ID: oldJob.Job.ID, Attempt: 1, MaxAttempts: 5},
+		Args:   ResolveContentArgs{EpisodeID: episodeID},
+	}
+	worker := &ResolveContentWorker{Pool: pool}
+	if err := worker.Work(ctx, job); !errors.Is(err, errEpisodeAttemptSuperseded) {
+		t.Fatalf("stale worker error = %v, want superseded", err)
+	}
+	var status string
+	var activeJobID int64
+	if err := pool.QueryRow(ctx, `
+		SELECT status, active_job_id FROM episodes WHERE id = $1
+	`, episodeID).Scan(&status, &activeJobID); err != nil {
+		t.Fatal(err)
+	}
 	if status != "queued" {
 		t.Fatalf("episode status = %q, want queued", status)
+	}
+	if activeJobID != resumed.JobID {
+		t.Fatalf("active job ID = %d, want %d", activeJobID, resumed.JobID)
 	}
 }
 

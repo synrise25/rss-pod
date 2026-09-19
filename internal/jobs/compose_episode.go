@@ -21,13 +21,17 @@ type ComposeEpisodeWorker struct {
 }
 
 func (w *ComposeEpisodeWorker) Work(ctx context.Context, job *river.Job[ComposeEpisodeArgs]) error {
-	if err := w.compose(ctx, job.Args.EpisodeID); err != nil {
+	if err := startEpisodeAttempt(ctx, w.Pool, job.Args.EpisodeID, job.ID, "composing"); err != nil {
+		return finishEpisodeAttempt(ctx, w.Pool, job.Args.EpisodeID, job.ID, job.Attempt, job.MaxAttempts,
+			fmt.Errorf("mark episode composing: %w", err))
+	}
+	if err := w.compose(ctx, job.Args.EpisodeID, job.ID); err != nil {
 		return finishEpisodeAttempt(ctx, w.Pool, job.Args.EpisodeID, job.ID, job.Attempt, job.MaxAttempts, err)
 	}
 	return nil
 }
 
-func (w *ComposeEpisodeWorker) compose(ctx context.Context, episodeID string) error {
+func (w *ComposeEpisodeWorker) compose(ctx context.Context, episodeID string, jobID int64) error {
 	var sourceID string
 	if err := w.Pool.QueryRow(ctx, `
 		SELECT e.source_id
@@ -92,13 +96,17 @@ func (w *ComposeEpisodeWorker) compose(ctx context.Context, episodeID string) er
 		return err
 	}
 	publicURL := w.Storage.PublicURL(key)
-	if _, err := w.Pool.Exec(ctx, `
+	tag, err := w.Pool.Exec(ctx, `
 		UPDATE episodes
 		SET status = 'published', audio_object_key = $2, audio_url = $3, audio_byte_size = $4,
 		    audio_duration_seconds = $5, error = '', updated_at = now(), published_at = now()
-		WHERE id = $1
-	`, episodeID, key, publicURL, audio.Len(), durationSeconds); err != nil {
+		WHERE id = $1 AND active_job_id = $6
+	`, episodeID, key, publicURL, audio.Len(), durationSeconds, jobID)
+	if err != nil {
 		return fmt.Errorf("publish episode: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return errEpisodeAttemptSuperseded
 	}
 	return nil
 }

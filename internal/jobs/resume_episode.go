@@ -74,8 +74,10 @@ func ResumeEpisode(
 		return ResumedEpisode{}, fmt.Errorf("enqueue episode resume: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `
-		UPDATE episodes SET status = 'queued', error = '', updated_at = now() WHERE id = $1
-	`, episodeID); err != nil {
+		UPDATE episodes
+		SET status = 'queued', error = '', active_job_id = $2, updated_at = now()
+		WHERE id = $1
+	`, episodeID, inserted.Job.ID); err != nil {
 		return ResumedEpisode{}, fmt.Errorf("mark episode queued: %w", err)
 	}
 	return ResumedEpisode{JobID: inserted.Job.ID, JobKind: args.Kind()}, nil

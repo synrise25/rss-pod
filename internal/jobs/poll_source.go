@@ -169,8 +169,14 @@ func (w *PollSourceWorker) poll(ctx context.Context, args PollSourceArgs) error 
 					return fmt.Errorf("store episode speaker: %w", err)
 				}
 			}
-			if _, err := w.River.InsertTx(ctx, tx, ResolveContentArgs{EpisodeID: insertedEpisodeID}, nil); err != nil {
+			inserted, err := w.River.InsertTx(ctx, tx, ResolveContentArgs{EpisodeID: insertedEpisodeID}, nil)
+			if err != nil {
 				return fmt.Errorf("enqueue content resolution: %w", err)
+			}
+			if _, err := tx.Exec(ctx, `
+				UPDATE episodes SET active_job_id = $2 WHERE id = $1
+			`, insertedEpisodeID, inserted.Job.ID); err != nil {
+				return fmt.Errorf("assign content resolution job: %w", err)
 			}
 		} else if args.ResumeIncomplete {
 			var existingEpisodeID string
