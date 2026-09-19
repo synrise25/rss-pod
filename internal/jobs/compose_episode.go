@@ -91,7 +91,7 @@ func (w *ComposeEpisodeWorker) compose(ctx context.Context, episodeID string, jo
 	if audio.Len() == 0 {
 		return fmt.Errorf("composed audio is empty")
 	}
-	key := fmt.Sprintf("sources/%s/episodes/%s.mp3", sourceID, episodeID)
+	key := episodeMediaObjectKey(sourceID, episodeID, jobID)
 	if err := w.Storage.PutMedia(ctx, key, "audio/mpeg", audio.Bytes()); err != nil {
 		return err
 	}
@@ -109,4 +109,8 @@ func (w *ComposeEpisodeWorker) compose(ctx context.Context, episodeID string, jo
 		return errEpisodeAttemptSuperseded
 	}
 	return nil
+}
+
+func episodeMediaObjectKey(sourceID, episodeID string, jobID int64) string {
+	return fmt.Sprintf("sources/%s/episodes/%s/jobs/%d.mp3", sourceID, episodeID, jobID)
 }

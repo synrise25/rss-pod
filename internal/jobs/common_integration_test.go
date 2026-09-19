@@ -178,6 +178,45 @@ func TestSupersededWorkerCannotOverwriteResumedQueuedStatusIntegration(t *testin
 	}
 }
 
+func TestSupersededTTSWorkerCannotPublishSegmentIntegration(t *testing.T) {
+	pool := jobsTestPool(t)
+	ctx := context.Background()
+	episodeID := seedRetryingEpisode(t, pool, "superseded-segment")
+	const currentJobID int64 = 200
+	if _, err := pool.Exec(ctx, `
+		UPDATE episodes SET status = 'generating_tts', active_job_id = $2 WHERE id = $1
+	`, episodeID, currentJobID); err != nil {
+		t.Fatal(err)
+	}
+
+	staleKey := audioSegmentObjectKey(episodeID, currentJobID-1, 0)
+	err := storeAudioSegment(ctx, pool, episodeID, currentJobID-1, 0, "test", staleKey, 5)
+	if !errors.Is(err, errEpisodeAttemptSuperseded) {
+		t.Fatalf("stale segment publication error = %v, want superseded", err)
+	}
+	var count int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM audio_segments WHERE episode_id = $1`, episodeID).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("stored %d stale segments, want 0", count)
+	}
+
+	currentKey := audioSegmentObjectKey(episodeID, currentJobID, 0)
+	if err := storeAudioSegment(ctx, pool, episodeID, currentJobID, 0, "test", currentKey, 5); err != nil {
+		t.Fatal(err)
+	}
+	var storedKey string
+	if err := pool.QueryRow(ctx, `
+		SELECT object_key FROM audio_segments WHERE episode_id = $1 AND position = 0
+	`, episodeID).Scan(&storedKey); err != nil {
+		t.Fatal(err)
+	}
+	if storedKey != currentKey {
+		t.Fatalf("stored segment key = %q, want %q", storedKey, currentKey)
+	}
+}
+
 func TestCancelledSetupErrorFinalizesEpisodeIntegration(t *testing.T) {
 	pool := jobsTestPool(t)
 	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})

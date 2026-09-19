@@ -68,6 +68,19 @@ func TestEpisodeFailureStatus(t *testing.T) {
 	}
 }
 
+func TestGeneratedObjectKeysAreScopedToJob(t *testing.T) {
+	const (
+		episodeID = "episode-id"
+		sourceID  = "source-id"
+	)
+	if first, second := audioSegmentObjectKey(episodeID, 10, 2), audioSegmentObjectKey(episodeID, 11, 2); first == second {
+		t.Fatalf("audio segment keys collide across jobs: %q", first)
+	}
+	if first, second := episodeMediaObjectKey(sourceID, episodeID, 10), episodeMediaObjectKey(sourceID, episodeID, 11); first == second {
+		t.Fatalf("episode media keys collide across jobs: %q", first)
+	}
+}
+
 func TestGenerateTTSUsesFiveRiverAttempts(t *testing.T) {
 	if got := (GenerateTTSArgs{}).InsertOpts().MaxAttempts; got != 5 {
 		t.Fatalf("GenerateTTS River max attempts = %d, want 5", got)

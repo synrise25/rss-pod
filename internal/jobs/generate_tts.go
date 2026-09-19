@@ -65,11 +65,11 @@ func (w *GenerateTTSWorker) generate(ctx context.Context, episodeID string, jobI
 		return err
 	}
 	if turns[0].Talker != "" {
-		if err := w.generateMultiTalker(ctx, episodeID, turns, existing); err != nil {
+		if err := w.generateMultiTalker(ctx, episodeID, jobID, turns, existing); err != nil {
 			return err
 		}
 	} else {
-		if err := w.generateSingleTalker(ctx, episodeID, dialogue.DialogueProfile, turns, existing); err != nil {
+		if err := w.generateSingleTalker(ctx, episodeID, jobID, dialogue.DialogueProfile, turns, existing); err != nil {
 			return err
 		}
 	}
@@ -100,7 +100,7 @@ func (w *GenerateTTSWorker) generate(ctx context.Context, episodeID string, jobI
 	return nil
 }
 
-func (w *GenerateTTSWorker) generateSingleTalker(ctx context.Context, episodeID string, dialogue config.DialogueProfile, turns []scriptTurn, existing map[int]string) error {
+func (w *GenerateTTSWorker) generateSingleTalker(ctx context.Context, episodeID string, jobID int64, dialogue config.DialogueProfile, turns []scriptTurn, existing map[int]string) error {
 	for _, turn := range turns {
 		if turn.Talker != "" {
 			return permanent("episode mixes MultiTalker and single-talker voices")
@@ -116,26 +116,18 @@ func (w *GenerateTTSWorker) generateSingleTalker(ctx context.Context, episodeID 
 		if err != nil {
 			return err
 		}
-		key := fmt.Sprintf("episodes/%s/segments/%04d.mp3", episodeID, turn.Position)
+		key := audioSegmentObjectKey(episodeID, jobID, turn.Position)
 		if err := w.Storage.PutPrivate(ctx, key, "audio/mpeg", audio); err != nil {
 			return err
 		}
-		if _, err := w.Pool.Exec(ctx, `
-			INSERT INTO audio_segments (episode_id, position, tts_service, object_key, byte_size)
-			VALUES ($1, $2, $3, $4, $5)
-			ON CONFLICT (episode_id, position) DO UPDATE SET
-			    tts_service = EXCLUDED.tts_service,
-			    object_key = EXCLUDED.object_key,
-			    byte_size = EXCLUDED.byte_size,
-			    created_at = now()
-		`, episodeID, turn.Position, turn.TTSService, key, len(audio)); err != nil {
+		if err := storeAudioSegment(ctx, w.Pool, episodeID, jobID, turn.Position, turn.TTSService, key, len(audio)); err != nil {
 			return fmt.Errorf("store audio segment: %w", err)
 		}
 	}
 	return nil
 }
 
-func (w *GenerateTTSWorker) generateMultiTalker(ctx context.Context, episodeID string, turns []scriptTurn, existing map[int]string) error {
+func (w *GenerateTTSWorker) generateMultiTalker(ctx context.Context, episodeID string, jobID int64, turns []scriptTurn, existing map[int]string) error {
 	const position = 0
 	serviceName := turns[0].TTSService
 	voiceName := turns[0].Voice
@@ -163,11 +155,49 @@ func (w *GenerateTTSWorker) generateMultiTalker(ctx context.Context, episodeID s
 	if err != nil {
 		return classifyAzureError(err)
 	}
-	key := fmt.Sprintf("episodes/%s/segments/%04d.mp3", episodeID, position)
+	key := audioSegmentObjectKey(episodeID, jobID, position)
 	if err := w.Storage.PutPrivate(ctx, key, "audio/mpeg", audio); err != nil {
 		return err
 	}
-	if _, err := w.Pool.Exec(ctx, `
+	if err := storeAudioSegment(ctx, w.Pool, episodeID, jobID, position, serviceName, key, len(audio)); err != nil {
+		return fmt.Errorf("store MultiTalker audio segment: %w", err)
+	}
+	return nil
+}
+
+func audioSegmentObjectKey(episodeID string, jobID int64, position int) string {
+	return fmt.Sprintf("episodes/%s/jobs/%d/segments/%04d.mp3", episodeID, jobID, position)
+}
+
+func storeAudioSegment(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	episodeID string,
+	jobID int64,
+	position int,
+	serviceName string,
+	key string,
+	byteSize int,
+) error {
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var isOwner bool
+	if err := tx.QueryRow(ctx, `
+		SELECT COALESCE(active_job_id = $2, false)
+		FROM episodes WHERE id = $1 FOR UPDATE
+	`, episodeID, jobID).Scan(&isOwner); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errEpisodeAttemptSuperseded
+		}
+		return err
+	}
+	if !isOwner {
+		return errEpisodeAttemptSuperseded
+	}
+	if _, err := tx.Exec(ctx, `
 		INSERT INTO audio_segments (episode_id, position, tts_service, object_key, byte_size)
 		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (episode_id, position) DO UPDATE SET
@@ -175,10 +205,10 @@ func (w *GenerateTTSWorker) generateMultiTalker(ctx context.Context, episodeID s
 		    object_key = EXCLUDED.object_key,
 		    byte_size = EXCLUDED.byte_size,
 		    created_at = now()
-	`, episodeID, position, serviceName, key, len(audio)); err != nil {
-		return fmt.Errorf("store MultiTalker audio segment: %w", err)
+	`, episodeID, position, serviceName, key, byteSize); err != nil {
+		return err
 	}
-	return nil
+	return tx.Commit(ctx)
 }
 
 func (w *GenerateTTSWorker) loadDialogue(ctx context.Context, episodeID string) (episodeDialogue, error) {
