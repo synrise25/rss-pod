@@ -102,6 +102,9 @@ func (w *ResolveContentWorker) resolve(ctx context.Context, episodeID string, jo
 		return fmt.Errorf("begin content transaction: %w", err)
 	}
 	defer tx.Rollback(ctx)
+	if err := lockEpisodeAttempt(ctx, tx, episodeID, jobID); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(ctx, `DELETE FROM documents WHERE episode_id = $1`, episodeID); err != nil {
 		return fmt.Errorf("clear documents: %w", err)
 	}

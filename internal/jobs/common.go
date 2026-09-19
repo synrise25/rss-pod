@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 )
@@ -55,6 +56,23 @@ func startEpisodeAttempt(ctx context.Context, pool *pgxpool.Pool, episodeID stri
 		return err
 	}
 	if tag.RowsAffected() == 0 {
+		return errEpisodeAttemptSuperseded
+	}
+	return nil
+}
+
+func lockEpisodeAttempt(ctx context.Context, tx pgx.Tx, episodeID string, jobID int64) error {
+	var isOwner bool
+	if err := tx.QueryRow(ctx, `
+		SELECT COALESCE(active_job_id = $2, false)
+		FROM episodes WHERE id = $1 FOR UPDATE
+	`, episodeID, jobID).Scan(&isOwner); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errEpisodeAttemptSuperseded
+		}
+		return err
+	}
+	if !isOwner {
 		return errEpisodeAttemptSuperseded
 	}
 	return nil

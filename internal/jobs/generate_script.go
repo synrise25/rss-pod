@@ -121,6 +121,9 @@ func (w *GenerateScriptWorker) generate(ctx context.Context, episodeID string, j
 		return fmt.Errorf("begin script transaction: %w", err)
 	}
 	defer tx.Rollback(ctx)
+	if err := lockEpisodeAttempt(ctx, tx, episodeID, jobID); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(ctx, `DELETE FROM script_turns WHERE episode_id = $1`, episodeID); err != nil {
 		return fmt.Errorf("clear script turns: %w", err)
 	}

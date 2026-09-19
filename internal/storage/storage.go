@@ -54,12 +54,29 @@ func (c *Client) PutMedia(ctx context.Context, key, contentType string, data []b
 	return c.put(ctx, c.config.MediaBucket, key, contentType, data)
 }
 
+func (c *Client) DeletePrivate(ctx context.Context, key string) error {
+	return c.remove(ctx, c.config.PrivateBucket, key)
+}
+
+func (c *Client) DeleteMedia(ctx context.Context, key string) error {
+	return c.remove(ctx, c.config.MediaBucket, key)
+}
+
 func (c *Client) put(ctx context.Context, bucket, key, contentType string, data []byte) error {
 	operationCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 	_, err := c.client.PutObject(operationCtx, bucket, key, bytes.NewReader(data), int64(len(data)), minio.PutObjectOptions{ContentType: contentType})
 	if err != nil {
 		return fmt.Errorf("put s3://%s/%s: %w", bucket, key, err)
+	}
+	return nil
+}
+
+func (c *Client) remove(ctx context.Context, bucket, key string) error {
+	operationCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	if err := c.client.RemoveObject(operationCtx, bucket, key, minio.RemoveObjectOptions{}); err != nil {
+		return fmt.Errorf("remove s3://%s/%s: %w", bucket, key, err)
 	}
 	return nil
 }

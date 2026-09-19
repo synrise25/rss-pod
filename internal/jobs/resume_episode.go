@@ -11,7 +11,7 @@ import (
 
 var (
 	ErrEpisodeNotFound     = errors.New("episode not found")
-	ErrEpisodeNotRetryable = errors.New("episode is not failed or retrying")
+	ErrEpisodeNotRetryable = errors.New("episode is not recoverable")
 	ErrEpisodeJobActive    = errors.New("episode already has an active job")
 )
 
@@ -42,10 +42,6 @@ func ResumeEpisode(
 	if err != nil {
 		return ResumedEpisode{}, fmt.Errorf("load episode for resume: %w", err)
 	}
-	if status != "failed" && status != "retrying" {
-		return ResumedEpisode{}, ErrEpisodeNotRetryable
-	}
-
 	var activeJob bool
 	if err := tx.QueryRow(ctx, `
 		SELECT EXISTS (
@@ -58,6 +54,12 @@ func ResumeEpisode(
 	}
 	if activeJob {
 		return ResumedEpisode{}, ErrEpisodeJobActive
+	}
+	// A queued job can be cancelled before River ever invokes its worker, so it
+	// never gets a chance to finalize the episode as failed. With no active River
+	// job left, queued is an orphaned state and is safe to recover explicitly.
+	if status != "failed" && status != "retrying" && status != "queued" {
+		return ResumedEpisode{}, ErrEpisodeNotRetryable
 	}
 
 	var args river.JobArgs

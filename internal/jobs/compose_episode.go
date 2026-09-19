@@ -3,6 +3,7 @@ package jobs
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"time"
@@ -103,12 +104,35 @@ func (w *ComposeEpisodeWorker) compose(ctx context.Context, episodeID string, jo
 		WHERE id = $1 AND active_job_id = $6
 	`, episodeID, key, publicURL, audio.Len(), durationSeconds, jobID)
 	if err != nil {
-		return fmt.Errorf("publish episode: %w", err)
+		publishErr := fmt.Errorf("publish episode: %w", err)
+		verifyCtx, cancel := episodeFailureUpdateContext(ctx)
+		defer cancel()
+		var published bool
+		verifyErr := w.Pool.QueryRow(verifyCtx, `
+			SELECT status = 'published' AND audio_object_key = $2
+			FROM episodes WHERE id = $1
+		`, episodeID, key).Scan(&published)
+		if verifyErr == nil && published {
+			return nil
+		}
+		if verifyErr != nil {
+			return errors.Join(publishErr, fmt.Errorf("verify episode publication: %w", verifyErr))
+		}
+		return w.deleteRejectedMediaObject(ctx, key, publishErr)
 	}
 	if tag.RowsAffected() == 0 {
-		return errEpisodeAttemptSuperseded
+		return w.deleteRejectedMediaObject(ctx, key, errEpisodeAttemptSuperseded)
 	}
 	return nil
+}
+
+func (w *ComposeEpisodeWorker) deleteRejectedMediaObject(ctx context.Context, key string, publicationErr error) error {
+	cleanupCtx, cancel := episodeFailureUpdateContext(ctx)
+	defer cancel()
+	if err := w.Storage.DeleteMedia(cleanupCtx, key); err != nil {
+		return errors.Join(publicationErr, fmt.Errorf("delete rejected media object: %w", err))
+	}
+	return publicationErr
 }
 
 func episodeMediaObjectKey(sourceID, episodeID string, jobID int64) string {

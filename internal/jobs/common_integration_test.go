@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -214,6 +215,118 @@ func TestSupersededTTSWorkerCannotPublishSegmentIntegration(t *testing.T) {
 	}
 	if storedKey != currentKey {
 		t.Fatalf("stored segment key = %q, want %q", storedKey, currentKey)
+	}
+}
+
+func TestCancelledQueuedEpisodeCanBeResumedIntegration(t *testing.T) {
+	pool := jobsTestPool(t)
+	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	episodeID := seedRetryingEpisode(t, pool, "cancelled-before-work")
+	queuedJob, err := client.Insert(ctx, ResolveContentArgs{EpisodeID: episodeID}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
+		UPDATE episodes SET status = 'queued', active_job_id = $2 WHERE id = $1
+	`, episodeID, queuedJob.Job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.JobCancel(ctx, queuedJob.Job.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	resumed, err := ResumeEpisode(ctx, tx, client, episodeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if resumed.JobID == queuedJob.Job.ID {
+		t.Fatalf("resume reused cancelled job ID %d", resumed.JobID)
+	}
+	var status string
+	var activeJobID int64
+	if err := pool.QueryRow(ctx, `
+		SELECT status, active_job_id FROM episodes WHERE id = $1
+	`, episodeID).Scan(&status, &activeJobID); err != nil {
+		t.Fatal(err)
+	}
+	if status != "queued" || activeJobID != resumed.JobID {
+		t.Fatalf("resumed episode = status %q active job %d, want queued/%d", status, activeJobID, resumed.JobID)
+	}
+}
+
+func TestResumeAndStageHandoffUseSameLockOrderIntegration(t *testing.T) {
+	pool := jobsTestPool(t)
+	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	episodeID := seedRetryingEpisode(t, pool, "handoff-lock-order")
+	const handoffJobID int64 = 300
+	if _, err := pool.Exec(ctx, `
+		UPDATE episodes SET status = 'generating_script', active_job_id = $2 WHERE id = $1
+	`, episodeID, handoffJobID); err != nil {
+		t.Fatal(err)
+	}
+
+	handoffTx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer handoffTx.Rollback(ctx)
+	if err := lockEpisodeAttempt(ctx, handoffTx, episodeID, handoffJobID); err != nil {
+		t.Fatal(err)
+	}
+
+	resumeStarted := make(chan struct{})
+	resumeResult := make(chan error, 1)
+	go func() {
+		resumeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		tx, err := pool.Begin(resumeCtx)
+		if err != nil {
+			resumeResult <- err
+			return
+		}
+		defer tx.Rollback(resumeCtx)
+		close(resumeStarted)
+		_, err = ResumeEpisode(resumeCtx, tx, client, episodeID)
+		resumeResult <- err
+	}()
+	<-resumeStarted
+
+	inserted, err := client.InsertTx(ctx, handoffTx, GenerateTTSArgs{EpisodeID: episodeID}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := handoffTx.Exec(ctx, `
+		UPDATE episodes SET status = 'script_ready', active_job_id = $2 WHERE id = $1
+	`, episodeID, inserted.Job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := handoffTx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case err := <-resumeResult:
+		if !errors.Is(err, ErrEpisodeJobActive) {
+			t.Fatalf("concurrent resume error = %v, want active job", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("concurrent resume deadlocked with stage handoff")
 	}
 }
 
