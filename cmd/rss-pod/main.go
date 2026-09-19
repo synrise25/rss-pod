@@ -121,6 +121,7 @@ func runPoll(ctx context.Context, args []string) error {
 	sourcesValue := flags.String("sources", "", "comma-separated source IDs, or all")
 	times := flags.Int("times", 1, "number of polls to enqueue per source")
 	limit := flags.Int("limit", 0, "maximum feed items per poll; zero uses each source configuration")
+	resumeIncomplete := flags.Bool("resume-incomplete", false, "resume failed or orphaned retrying episodes in the fetched feed window")
 	jsonOutput := flags.Bool("json", false, "print JSON")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -133,7 +134,7 @@ func runPoll(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	queued, err := app.EnqueuePolls(ctx, cfg, sources, *times, *limit)
+	queued, err := app.EnqueuePolls(ctx, cfg, sources, *times, *limit, *resumeIncomplete)
 	if err != nil {
 		return err
 	}

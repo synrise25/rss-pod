@@ -21,6 +21,7 @@ func EnqueuePoll(
 	client *river.Client[pgx.Tx],
 	sourceID string,
 	limit int,
+	resumeIncomplete bool,
 ) (EnqueuedPoll, error) {
 	runID := uuid.New()
 	if _, err := tx.Exec(ctx, `
@@ -29,9 +30,10 @@ func EnqueuePoll(
 		return EnqueuedPoll{}, fmt.Errorf("create source run: %w", err)
 	}
 	inserted, err := client.InsertTx(ctx, tx, PollSourceArgs{
-		SourceID: sourceID,
-		RunID:    runID.String(),
-		Limit:    limit,
+		SourceID:         sourceID,
+		RunID:            runID.String(),
+		Limit:            limit,
+		ResumeIncomplete: resumeIncomplete,
 	}, nil)
 	if err != nil {
 		return EnqueuedPoll{}, fmt.Errorf("enqueue source poll: %w", err)

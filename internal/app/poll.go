@@ -68,6 +68,7 @@ func EnqueuePolls(
 	sources []config.SourceConfig,
 	times int,
 	limit int,
+	resumeIncomplete bool,
 ) ([]QueuedPoll, error) {
 	if len(sources) == 0 {
 		return nil, fmt.Errorf("at least one source is required")
@@ -103,7 +104,7 @@ func EnqueuePolls(
 	queued := make([]QueuedPoll, 0, len(sources)*times)
 	for _, source := range sources {
 		for number := 1; number <= times; number++ {
-			result, err := jobs.EnqueuePoll(ctx, tx, client, source.ID, limit)
+			result, err := jobs.EnqueuePoll(ctx, tx, client, source.ID, limit, resumeIncomplete)
 			if err != nil {
 				return nil, fmt.Errorf("source %s poll %d: %w", source.ID, number, err)
 			}

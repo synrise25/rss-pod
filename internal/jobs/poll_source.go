@@ -19,9 +19,10 @@ import (
 )
 
 type PollSourceArgs struct {
-	SourceID string `json:"source_id" river:"unique"`
-	RunID    string `json:"run_id"`
-	Limit    int    `json:"limit,omitempty"`
+	SourceID         string `json:"source_id" river:"unique"`
+	RunID            string `json:"run_id"`
+	Limit            int    `json:"limit,omitempty"`
+	ResumeIncomplete bool   `json:"resume_incomplete,omitempty"`
 }
 
 func (PollSourceArgs) Kind() string { return "poll_source" }
@@ -170,6 +171,17 @@ func (w *PollSourceWorker) poll(ctx context.Context, args PollSourceArgs) error 
 			}
 			if _, err := w.River.InsertTx(ctx, tx, ResolveContentArgs{EpisodeID: insertedEpisodeID}, nil); err != nil {
 				return fmt.Errorf("enqueue content resolution: %w", err)
+			}
+		} else if args.ResumeIncomplete {
+			var existingEpisodeID string
+			if err := tx.QueryRow(ctx, `
+				SELECT id::text FROM episodes WHERE feed_item_id = $1
+			`, feedItemID).Scan(&existingEpisodeID); err != nil {
+				return fmt.Errorf("load existing episode for resume: %w", err)
+			}
+			if _, err := ResumeEpisode(ctx, tx, w.River, existingEpisodeID); err != nil &&
+				!errors.Is(err, ErrEpisodeNotRetryable) && !errors.Is(err, ErrEpisodeJobActive) {
+				return fmt.Errorf("resume existing episode: %w", err)
 			}
 		}
 	}
