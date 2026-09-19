@@ -21,15 +21,42 @@ func permanent(format string, args ...any) error {
 	return &permanentError{err: fmt.Errorf(format, args...)}
 }
 
-func finishEpisodeAttempt(ctx context.Context, pool *pgxpool.Pool, episodeID string, attempt, maxAttempts int, workErr error) error {
+func finishEpisodeAttempt(ctx context.Context, pool *pgxpool.Pool, episodeID string, jobID int64, attempt, maxAttempts int, workErr error) error {
 	var permanentErr *permanentError
 	isPermanent := errors.As(workErr, &permanentErr)
 	status := episodeFailureStatus(ctx, isPermanent, attempt, maxAttempts)
 	updateCtx, cancel := episodeFailureUpdateContext(ctx)
 	defer cancel()
-	if _, err := pool.Exec(updateCtx, `
-		UPDATE episodes SET status = $2, error = $3, updated_at = now() WHERE id = $1
-	`, episodeID, status, workErr.Error()); err != nil {
+	tx, err := pool.Begin(updateCtx)
+	if err != nil {
+		return fmt.Errorf("%v; begin episode failure update: %w", workErr, err)
+	}
+	defer tx.Rollback(updateCtx)
+	var lockedID string
+	if err := tx.QueryRow(updateCtx, `
+		SELECT id::text FROM episodes WHERE id = $1 FOR UPDATE
+	`, episodeID).Scan(&lockedID); err != nil {
+		return fmt.Errorf("%v; lock episode for failure update: %w", workErr, err)
+	}
+	var replacementActive bool
+	if err := tx.QueryRow(updateCtx, `
+		SELECT EXISTS (
+			SELECT 1 FROM river_job
+			WHERE args->>'episode_id' = $1
+			  AND id <> $2
+			  AND state IN ('available', 'pending', 'retryable', 'running', 'scheduled')
+		)
+	`, episodeID, jobID).Scan(&replacementActive); err != nil {
+		return fmt.Errorf("%v; check replacement episode job: %w", workErr, err)
+	}
+	if !replacementActive {
+		if _, err := tx.Exec(updateCtx, `
+			UPDATE episodes SET status = $2, error = $3, updated_at = now() WHERE id = $1
+		`, episodeID, status, workErr.Error()); err != nil {
+			return fmt.Errorf("%v; update episode failure: %w", workErr, err)
+		}
+	}
+	if err := tx.Commit(updateCtx); err != nil {
 		return fmt.Errorf("%v; update episode failure: %w", workErr, err)
 	}
 	if isPermanent {

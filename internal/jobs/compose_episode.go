@@ -22,7 +22,7 @@ type ComposeEpisodeWorker struct {
 
 func (w *ComposeEpisodeWorker) Work(ctx context.Context, job *river.Job[ComposeEpisodeArgs]) error {
 	if err := w.compose(ctx, job.Args.EpisodeID); err != nil {
-		return finishEpisodeAttempt(ctx, w.Pool, job.Args.EpisodeID, job.Attempt, job.MaxAttempts, err)
+		return finishEpisodeAttempt(ctx, w.Pool, job.Args.EpisodeID, job.ID, job.Attempt, job.MaxAttempts, err)
 	}
 	return nil
 }

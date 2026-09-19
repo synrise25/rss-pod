@@ -44,10 +44,11 @@ func (w *GenerateTTSWorker) Work(ctx context.Context, job *river.Job[GenerateTTS
 	if _, err := w.Pool.Exec(ctx, `
 		UPDATE episodes SET status = 'generating_tts', error = '', updated_at = now() WHERE id = $1
 	`, job.Args.EpisodeID); err != nil {
-		return fmt.Errorf("mark episode generating TTS: %w", err)
+		return finishEpisodeAttempt(ctx, w.Pool, job.Args.EpisodeID, job.ID, job.Attempt, job.MaxAttempts,
+			fmt.Errorf("mark episode generating TTS: %w", err))
 	}
 	if err := w.generate(ctx, job.Args.EpisodeID); err != nil {
-		return finishEpisodeAttempt(ctx, w.Pool, job.Args.EpisodeID, job.Attempt, job.MaxAttempts, err)
+		return finishEpisodeAttempt(ctx, w.Pool, job.Args.EpisodeID, job.ID, job.Attempt, job.MaxAttempts, err)
 	}
 	return nil
 }
