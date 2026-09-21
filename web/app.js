@@ -481,6 +481,7 @@ function selectEpisode(episode, { autoplay = false, resumeAt = 0 } = {}) {
   elements.playToggle.disabled = false;
   elements.progress.disabled = false;
   updateMediaSession(episode);
+  updateProgress();
   renderEpisodeList();
   scrollCurrentEpisodeIntoView();
 

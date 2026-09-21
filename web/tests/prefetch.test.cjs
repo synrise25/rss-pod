@@ -28,14 +28,14 @@ function fixture() {
     Audio, AbortController, nextAudio: null, audioEvents: null,
     isAdminPage: false, adminCSRF: '',
     state: { currentEpisodeID: 'a', speed: 1.5 },
-    elements: { audio, nowPlayingTitle: {}, nowPlayingSource: {}, playToggle: {}, progress: {} },
+    elements: { audio, nowPlayingTitle: {}, nowPlayingSource: {}, playToggle: {}, progress: { style: { setProperty() {} } }, elapsedTime: {}, remainingTime: {} },
     document: {}, visibleEpisodes: () => queue, sourceName: () => 'Source',
     clearMediaSessionPosition() {}, applyPlaybackRate() {}, updateMediaSession() {},
     renderEpisodeList() {}, scrollCurrentEpisodeIntoView() {}, safePlay() {},
     renderPlaybackState() {}, moveInQueue() {}, updateProgress() {},
     updateMediaSessionPosition() {}, persistResumeState() {},
   });
-  for (const name of ['selectEpisode', 'bindAudioEvents', 'releaseAudio', 'clearNextAudio', 'updateNextAudio', 'isAudioFullyBuffered']) {
+  for (const name of ['selectEpisode', 'bindAudioEvents', 'releaseAudio', 'clearNextAudio', 'updateNextAudio', 'isAudioFullyBuffered', 'updateProgress', 'formatDuration']) {
     const start = source.indexOf(`function ${name}(`);
     const rest = source.slice(start);
     const end = rest.indexOf('\n}\n') + 3;
@@ -90,6 +90,9 @@ test('next playback reuses the exact buffered element without calling load again
   assert.equal(c.nextAudio, null);
   assert.equal(cached.id, 'audio');
   assert.equal(cached.defaultPlaybackRate, 1.5);
+  assert.equal(c.elements.progress.value, '0');
+  assert.equal(c.elements.elapsedTime.textContent, '0:00');
+  assert.equal(c.elements.remainingTime.textContent, '-0:30');
 });
 
 test('jumping to another episode cancels preloading', () => {
