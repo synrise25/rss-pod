@@ -12,6 +12,8 @@ const isAdminPage = /^\/admin(?:\/|$)/.test(window.location.pathname);
 let adminCSRF = "";
 let adminSessionTimer;
 let adminBusy = false;
+let nextAudio = null;
+let audioEvents = null;
 const localeKey = (/^(?:\/admin)?\/zh-cn(?:\/|$)/i.test(window.location.pathname) || window.location.pathname === "/admin") ? "zh-CN" : "en";
 const copy = {
   en: {
@@ -438,6 +440,22 @@ function selectEpisode(episode, { autoplay = false, resumeAt = 0 } = {}) {
   state.currentEpisodeID = episode.id;
   state.restoringResume = resumeAt > 0;
   clearMediaSessionPosition();
+  const prefetched = nextAudio?.episodeID === episode.id && nextAudio.url === episode.audioURL && !nextAudio.audio.error
+    ? nextAudio.audio : null;
+  if (prefetched) {
+    nextAudio = null;
+    audioEvents?.abort();
+    const previous = elements.audio;
+    prefetched.id = previous.id;
+    previous.replaceWith(prefetched);
+    elements.audio = prefetched;
+    releaseAudio(previous);
+    bindAudioEvents();
+  } else {
+    clearNextAudio();
+    // Remove pending resume handlers from the previous selection too.
+    bindAudioEvents();
+  }
   elements.audio.defaultPlaybackRate = state.speed;
   if (resumeAt > 0) {
     const resumeEpisodeID = episode.id;
@@ -448,11 +466,14 @@ function selectEpisode(episode, { autoplay = false, resumeAt = 0 } = {}) {
         elements.audio.currentTime = Math.min(resumeAt, Math.max(0, elements.audio.duration - 1));
         state.restoringResume = false;
       },
-      { once: true },
+      { once: true, signal: audioEvents.signal },
     );
   }
-  elements.audio.src = episode.audioURL;
-  elements.audio.load();
+  if (!prefetched) {
+    elements.audio.preload = autoplay ? "auto" : "metadata";
+    elements.audio.src = episode.audioURL;
+    elements.audio.load();
+  }
   applyPlaybackRate();
   document.title = episode.title;
   elements.nowPlayingTitle.textContent = episode.title;
@@ -460,6 +481,7 @@ function selectEpisode(episode, { autoplay = false, resumeAt = 0 } = {}) {
   elements.playToggle.disabled = false;
   elements.progress.disabled = false;
   updateMediaSession(episode);
+  updateProgress();
   renderEpisodeList();
   scrollCurrentEpisodeIntoView();
 
@@ -468,6 +490,7 @@ function selectEpisode(episode, { autoplay = false, resumeAt = 0 } = {}) {
 
 async function safePlay() {
   try {
+    elements.audio.preload = "auto";
     await elements.audio.play();
   } catch (error) {
     if (!isDemoMode()) console.error("play audio", error);
@@ -481,25 +504,7 @@ function bindPlayerEvents() {
   });
   elements.previousButton.addEventListener("click", () => moveInQueue(-1));
   elements.nextButton.addEventListener("click", () => moveInQueue(1));
-  elements.audio.addEventListener("play", renderPlaybackState);
-  elements.audio.addEventListener("pause", renderPlaybackState);
-  elements.audio.addEventListener("ended", () => moveInQueue(1));
-  elements.audio.addEventListener("loadedmetadata", () => {
-    applyPlaybackRate();
-    updateProgress();
-    updateMediaSessionPosition();
-  });
-  elements.audio.addEventListener("durationchange", () => {
-    updateProgress();
-    updateMediaSessionPosition();
-  });
-  elements.audio.addEventListener("timeupdate", () => {
-    updateProgress();
-    updateMediaSessionPosition();
-    persistResumeState();
-  });
-  elements.audio.addEventListener("seeked", updateMediaSessionPosition);
-  elements.audio.addEventListener("ratechange", updateMediaSessionPosition);
+  bindAudioEvents();
   elements.progress.addEventListener("input", () => {
     if (!Number.isFinite(elements.audio.duration)) return;
     elements.audio.currentTime = (Number(elements.progress.value) / 100) * elements.audio.duration;
@@ -507,6 +512,75 @@ function bindPlayerEvents() {
   for (const button of elements.speedButtons) {
     button.addEventListener("click", () => setSpeed(Number(button.dataset.speed)));
   }
+}
+
+// Only the active element owns playback handlers. The detached preloader stays silent.
+function bindAudioEvents() {
+  audioEvents?.abort();
+  audioEvents = new AbortController();
+  const on = (type, listener) => elements.audio.addEventListener(type, listener, { signal: audioEvents.signal });
+  on("play", renderPlaybackState);
+  on("pause", renderPlaybackState);
+  on("ended", () => moveInQueue(1));
+  on("loadedmetadata", () => {
+    applyPlaybackRate();
+    updateProgress();
+    updateMediaSessionPosition();
+  });
+  on("durationchange", () => {
+    updateProgress();
+    updateMediaSessionPosition();
+  });
+  on("timeupdate", () => {
+    updateProgress();
+    updateMediaSessionPosition();
+    persistResumeState();
+  });
+  on("seeked", updateMediaSessionPosition);
+  on("ratechange", updateMediaSessionPosition);
+  for (const event of ["progress", "canplaythrough", "suspend", "playing", "timeupdate"]) {
+    on(event, updateNextAudio);
+  }
+  on("waiting", () => {
+    if (nextAudio && !isAudioFullyBuffered(nextAudio.audio)) clearNextAudio();
+  });
+  on("error", clearNextAudio);
+}
+
+function releaseAudio(audio) {
+  audio.pause();
+  audio.removeAttribute("src");
+  audio.load();
+}
+
+function clearNextAudio() {
+  if (!nextAudio) return;
+  releaseAudio(nextAudio.audio);
+  nextAudio = null;
+}
+
+function isAudioFullyBuffered(audio) {
+  return Number.isFinite(audio.duration) && audio.duration > 0 &&
+    audio.buffered.length === 1 && audio.buffered.start(0) <= 0.05 &&
+    audio.buffered.end(0) >= audio.duration - 0.05;
+}
+
+function updateNextAudio() {
+  const queue = visibleEpisodes();
+  const index = queue.findIndex((episode) => episode.id === state.currentEpisodeID);
+  const next = index < 0 ? null : queue[index + 1];
+  if (nextAudio && (nextAudio.episodeID !== next?.id || nextAudio.url !== next?.audioURL)) clearNextAudio();
+  if (!next || nextAudio || (isAdminPage && !adminCSRF)) return;
+  const audio = elements.audio;
+  // canplaythrough is only an estimate. Require a continuous buffer for the
+  // entire track before allowing background traffic to compete with playback.
+  if (audio.paused || audio.ended || audio.error || !isAudioFullyBuffered(audio)) return;
+  const preload = new Audio();
+  nextAudio = { episodeID: next.id, url: next.audioURL, audio: preload };
+  preload.preload = "auto";
+  preload.src = next.audioURL;
+  preload.load();
+  // Keep failed attempts until the queue changes; do not retry on every timeupdate.
 }
 
 function renderPlaybackState() {
@@ -534,6 +608,7 @@ function updateQueueButtons() {
   const index = queue.findIndex((episode) => episode.id === state.currentEpisodeID);
   elements.previousButton.disabled = index <= 0;
   elements.nextButton.disabled = index < 0 || index >= queue.length - 1;
+  updateNextAudio();
 }
 
 function setSpeed(speed) {
@@ -1068,6 +1143,7 @@ function showAdminLogin(message = "") {
   adminCSRF = "";
   window.clearInterval(adminSessionTimer);
   elements.audio.pause();
+  clearNextAudio();
   setAdminPlayerVisible(false);
   adminMessage(message);
   document.querySelector("#admin-code").focus();
