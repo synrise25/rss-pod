@@ -36,6 +36,14 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Test player
+        run: node --test web/tests/*.test.cjs
+
       - name: Check formatting
         run: test -z "$(gofmt -l .)"
 

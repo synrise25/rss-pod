@@ -119,6 +119,12 @@ listener. `/` redirects from the browser's preferred language to the stable
 English route at `/en` or Simplified Chinese at `/zh-cn`; the language switcher
 keeps the current query string.
 
+During playback, once the current audio is fully buffered, the player preloads
+one upcoming episode in the current date and feed selection. Switching to that
+episode reuses the buffered audio; changing filters or skipping to another episode
+releases an unused preload. This cache lasts only for the current page and is not
+an offline download. Browser policies, especially on mobile, may limit buffering.
+
 ### Admin page and episode visibility
 
 The optional admin page shares the player port: `/admin` opens in Chinese, with
