@@ -222,7 +222,16 @@ type DialogueProfile struct {
 	Speakers []SpeakerConfig `yaml:"speakers" json:"speakers"`
 }
 
+type ScreeningConfig struct {
+	Enabled      *bool    `yaml:"enabled" json:"enabled,omitempty"`
+	LLM          []string `yaml:"llm" json:"llm,omitempty"`
+	Instructions *string  `yaml:"instructions" json:"instructions,omitempty"`
+}
+
+func (c ScreeningConfig) IsEnabled() bool { return c.Enabled != nil && *c.Enabled }
+
 type DefaultsConfig struct {
+	Screening  ScreeningConfig  `yaml:"screening"`
 	Schedule   ScheduleConfig   `yaml:"schedule"`
 	LLM        []string         `yaml:"llm"`
 	Generation GenerationConfig `yaml:"generation"`
@@ -388,6 +397,7 @@ type PodcastConfig struct {
 }
 
 type SourceConfig struct {
+	Screening  *ScreeningConfig  `yaml:"screening" json:"screening,omitempty"`
 	ID         string            `yaml:"id" json:"id"`
 	Name       string            `yaml:"name" json:"name"`
 	Enabled    bool              `yaml:"enabled" json:"enabled"`
@@ -533,6 +543,9 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	if err := c.validateScreening("defaults.screening", c.Defaults.Screening); err != nil {
+		return err
+	}
 	seen := make(map[string]struct{}, len(c.Sources))
 	cronParser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 	for i := range c.Sources {
@@ -563,6 +576,9 @@ func (c *Config) Validate() error {
 			}
 		}
 		if err := c.validateGeneration("source "+source.ID+" generation", c.EffectiveGeneration(*source)); err != nil {
+			return err
+		}
+		if err := c.validateScreening("source "+source.ID+" screening", c.EffectiveScreening(*source)); err != nil {
 			return err
 		}
 		if source.Podcast != nil {
@@ -918,4 +934,43 @@ func (c *Config) EffectivePodcast(source SourceConfig) PodcastConfig {
 		result.MaxAge = source.Podcast.MaxAge
 	}
 	return result
+}
+
+// EffectiveScreening merges individual fields; explicit false and empty instructions override defaults.
+func (c *Config) EffectiveScreening(source SourceConfig) ScreeningConfig {
+	result := c.Defaults.Screening
+	if source.Screening != nil {
+		if source.Screening.Enabled != nil {
+			result.Enabled = source.Screening.Enabled
+		}
+		if source.Screening.LLM != nil {
+			result.LLM = source.Screening.LLM
+		}
+		if source.Screening.Instructions != nil {
+			result.Instructions = source.Screening.Instructions
+		}
+	}
+	return result
+}
+
+func (c *Config) validateScreening(field string, screening ScreeningConfig) error {
+	if !screening.IsEnabled() {
+		return nil
+	}
+	if err := validateServiceReferences(field+".llm", screening.LLM, c.Services.LLM); err != nil {
+		return err
+	}
+	for _, name := range screening.LLM {
+		service := c.Services.LLM[name]
+		if service.Type != "openai_compatible" || strings.TrimSpace(service.Model) == "" {
+			return fmt.Errorf("%s: service %s requires openai_compatible type and a model", field, name)
+		}
+		if err := validateURL(field+" service "+name+" base_url", service.BaseURL); err != nil {
+			return err
+		}
+		if d, err := time.ParseDuration(service.Timeout); err != nil || d <= 0 {
+			return fmt.Errorf("%s: service %s timeout must be a positive duration", field, name)
+		}
+	}
+	return nil
 }

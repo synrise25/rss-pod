@@ -56,7 +56,9 @@ rss-pod 是一个用 Go 编写的 RSS 转播客应用。它会展开 RSS 内容�
 flowchart LR
     RSS[RSS 来源] --> Source[source]
     Source --> Content[内容展开]
-    Content --> LLM[生成脚本]
+    Content --> Screening{可选内容筛选}
+    Screening -->|保留或未开启| LLM[生成脚本]
+    Screening -->|跳过| Skipped[记录跳过原因]
     LLM --> TTS[语音片段]
     TTS --> Media[发布媒体]
     Media --> Player[网页播放器]
@@ -267,10 +269,52 @@ content:
 生成的 Document 数量，不限制这个 Document 内的回复数。送入 LLM 的资料达到应用层
 120,000 字符上限时会截断，并输出一条不含正文和 URL 的 warning 日志。
 
+### 可选内容筛选
+
+在 `defaults.screening` 中配置筛选服务，在 source 的 `screening` 下按字段覆盖：
+
+```yaml
+defaults:
+  screening:
+    enabled: false
+    llm: [deepseek]  # 引用 services.llm 中自行配置的低成本模型
+    instructions: ""
+
+sources:
+  - id: v2ex-hot
+    # 其余 source 配置保持原样
+    screening:
+      enabled: true
+      instructions: >-
+        跳过以推广、抽奖、赠码为主要目的且缺少实质讨论的内容。
+        有具体技术分享或有价值讨论时应保留。
+```
+
+筛选默认关闭，不增加 LLM 调用。开启后，在内容保存与脚本生成之间执行独立的
+`screen_content` River 任务，使用现有 `llm` 队列。`screening.llm` 必须显式配置，
+不会继承用于脚本生成的 `llm`；列表按顺序回退。source 未填写的字段继承 defaults，
+显式 `enabled: false` 可以覆盖全局开启；`llm` 整体替换，`instructions: ""` 清除继承的补充要求。
+
+内置规则只跳过明显缺少实质内容的推广、抽奖、刷楼等资料；有信息、经验或讨论则保留，
+拿不准也保留。补充要求会追加到内置规则。筛选和脚本生成使用相同的资料，不额外抽样回复，
+沿用 120,000 字符的应用层输入上限；超过时记录截断日志。该上限不是模型 token 上限，
+请选择能容纳实际输入的模型。
+
+结果包含 `allow` / `skip`、原因、服务名和模型名，并保存在数据库中。
+同一内容、规则及模型配置的结果在重试时复用；未完成任务恢复时，若内容或相关配置变化则重新判断。
+`skipped` 是正常终态，不生成脚本或音频，也不会被后续轮询或普通失败重试重新入队。
+判断接口超时、限流、服务端错误或返回无效 JSON 时会回退或重试，耗尽后进入 `failed`；
+配置、鉴权等不可重试错误直接失败。恢复失败任务时会检查筛选，不会绕过它。
+
+管理员登录 `/admin` 后可展开“最近跳过的内容”查看最近 100 条结果及原因；
+回环管理 API 的节目列表和详情也包含 `screening` 字段，可用
+`GET /api/v1/episodes?status=skipped` 查询。公共播放器和 Podcast RSS 只展示已发布节目。
+新增筛选表和状态需要先执行现有 `migrate` 命令；旧配置无需修改，配置版本仍为 6。
+
 ## 安全边界
 
 公共 listener 默认提供播放器和只读 `/api/v1/player/*` 路由；设置管理员环境变量后，
-额外启用 TOTP 登录保护的 `/admin` 和 `/api/v1/admin/*`，仅用于节目隐藏与恢复。
+额外启用 TOTP 登录保护的 `/admin` 和 `/api/v1/admin/*`，用于节目隐藏、恢复显示及查看跳过原因。
 健康检查、手动拉取、重试、
 数据库查询和播客管理接口只绑定回环 listener。不要把容器管理端口映射到宿主机公网，
 也不要让反向代理转发它。

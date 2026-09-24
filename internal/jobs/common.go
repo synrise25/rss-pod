@@ -127,3 +127,12 @@ func (ComposeEpisodeArgs) Kind() string { return "compose_episode" }
 func (ComposeEpisodeArgs) InsertOpts() river.InsertOpts {
 	return river.InsertOpts{Queue: "media", MaxAttempts: 5}
 }
+
+type ScreenContentArgs struct {
+	EpisodeID string `json:"episode_id" river:"unique"`
+}
+
+func (ScreenContentArgs) Kind() string { return "screen_content" }
+func (ScreenContentArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{Queue: "llm", MaxAttempts: 4}
+}

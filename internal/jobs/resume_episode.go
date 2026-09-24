@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
+	"github.com/synrise25/rss-pod/internal/config"
 )
 
 var (
@@ -27,15 +28,16 @@ func ResumeEpisode(
 	tx pgx.Tx,
 	client *river.Client[pgx.Tx],
 	episodeID string,
+	cfg *config.Config,
 ) (ResumedEpisode, error) {
-	var status string
+	var status, sourceID string
 	var documents, turns int
 	err := tx.QueryRow(ctx, `
-		SELECT e.status,
+		SELECT e.status, e.source_id,
 		       (SELECT count(*) FROM documents d WHERE d.episode_id = e.id),
 		       (SELECT count(*) FROM script_turns t WHERE t.episode_id = e.id)
 		FROM episodes e WHERE e.id = $1 FOR UPDATE
-	`, episodeID).Scan(&status, &documents, &turns)
+	`, episodeID).Scan(&status, &sourceID, &documents, &turns)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ResumedEpisode{}, ErrEpisodeNotFound
 	}
@@ -68,6 +70,10 @@ func ResumeEpisode(
 		args = ResolveContentArgs{EpisodeID: episodeID}
 	case turns == 0:
 		args = GenerateScriptArgs{EpisodeID: episodeID}
+		source, _ := cfg.Source(sourceID)
+		if cfg.EffectiveScreening(source).IsEnabled() {
+			args = ScreenContentArgs{EpisodeID: episodeID}
+		}
 	default:
 		args = GenerateTTSArgs{EpisodeID: episodeID}
 	}
