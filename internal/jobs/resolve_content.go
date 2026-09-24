@@ -122,7 +122,7 @@ func (w *ResolveContentWorker) resolve(ctx context.Context, episodeID string, jo
 	}
 	inserted, err := w.River.InsertTx(ctx, tx, next, nil)
 	if err != nil {
-		return fmt.Errorf("enqueue script generation: %w", err)
+		return fmt.Errorf("enqueue %s: %w", next.Kind(), err)
 	}
 	tag, err := tx.Exec(ctx, `
 		UPDATE episodes

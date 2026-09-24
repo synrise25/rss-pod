@@ -137,7 +137,11 @@ func TestScreeningPipelineIntegration(t *testing.T) {
 func TestQueuedScriptCannotBypassScreeningIntegration(t *testing.T) {
 	pool := jobsTestPool(t)
 	ctx := context.Background()
-	cfg := screeningTestConfig("http://unused")
+	llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeScreeningCompletion(w, `{"decision":"allow","reason":"substantive discussion"}`)
+	}))
+	defer llm.Close()
+	cfg := screeningTestConfig(llm.URL)
 	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
 	if err != nil {
 		t.Fatal(err)
@@ -150,6 +154,11 @@ func TestQueuedScriptCannotBypassScreeningIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Keep the routing script job running while screening finishes. River's
+	// struct tags do not enable uniqueness without nonzero UniqueOpts.
+	if _, err := pool.Exec(ctx, `UPDATE river_job SET state='running', attempt=1, attempted_at=now() WHERE id=$1`, inserted.Job.ID); err != nil {
+		t.Fatal(err)
+	}
 	worker := &GenerateScriptWorker{Pool: pool, Config: cfg, River: client}
 	if err := worker.Work(ctx, &river.Job[GenerateScriptArgs]{JobRow: inserted.Job, Args: GenerateScriptArgs{EpisodeID: id}}); err != nil {
 		t.Fatal(err)
@@ -160,6 +169,25 @@ func TestQueuedScriptCannotBypassScreeningIntegration(t *testing.T) {
 	}
 	if kind != "screen_content" {
 		t.Fatalf("kind=%s", kind)
+	}
+	var screeningJobID int64
+	if err := pool.QueryRow(ctx, `SELECT active_job_id FROM episodes WHERE id=$1`, id).Scan(&screeningJobID); err != nil {
+		t.Fatal(err)
+	}
+	screeningWorker := &ScreenContentWorker{Pool: pool, Config: cfg, River: client}
+	if err := screeningWorker.Work(ctx, &river.Job[ScreenContentArgs]{JobRow: &rivertype.JobRow{ID: screeningJobID, Attempt: 1, MaxAttempts: 4}, Args: ScreenContentArgs{EpisodeID: id}}); err != nil {
+		t.Fatal(err)
+	}
+	var nextJobID int64
+	var nextState, oldState string
+	if err := pool.QueryRow(ctx, `SELECT j.id, j.kind, j.state FROM episodes e JOIN river_job j ON j.id=e.active_job_id WHERE e.id=$1`, id).Scan(&nextJobID, &kind, &nextState); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT state FROM river_job WHERE id=$1`, inserted.Job.ID).Scan(&oldState); err != nil {
+		t.Fatal(err)
+	}
+	if nextJobID == inserted.Job.ID || kind != "generate_script" || nextState != "available" || oldState != "running" {
+		t.Fatalf("handoff reused running job: next=%d kind=%s state=%s old=%d/%s", nextJobID, kind, nextState, inserted.Job.ID, oldState)
 	}
 	// The original script attempt must no longer own the episode.
 	if err := worker.Work(ctx, &river.Job[GenerateScriptArgs]{JobRow: inserted.Job, Args: GenerateScriptArgs{EpisodeID: id}}); !errors.Is(err, errEpisodeAttemptSuperseded) {
