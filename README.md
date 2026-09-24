@@ -219,6 +219,20 @@ The main commands are:
 | `worker` | Run selected River queues |
 | `run` | Run the HTTP service, scheduler, and every queue |
 
+### Recovering incomplete episodes
+
+`poll --resume-incomplete` recovers incomplete episodes in the current RSS poll
+scope when they have no active River jobs. This includes intermediate states
+such as `content_ready` and `script_ready` left behind by cancelled or deleted
+jobs. Recovery continues from saved artifacts: resolve missing content, screen
+as configured before generating a missing script, or resume TTS while reusing
+existing audio segments. Published and editorially skipped episodes stay
+terminal. Episodes with queued, running, or retrying jobs are not enqueued again.
+
+`--limit` caps the number of RSS items processed, not the number of podcasts to
+produce. To recover an episode outside the current RSS list, use the loopback
+management API's `POST /api/v1/episodes/{episodeID}/retry` endpoint.
+
 ## Docker
 
 Build the image locally:
@@ -334,7 +348,8 @@ sources:
 
 Screening is disabled by default and adds no LLM calls while disabled. When
 enabled, an independent `screen_content` River job runs after content is saved
-and before script generation, using the existing `llm` queue. Configure
+and before script generation, sharing `runtime.jobs.queues.llm.concurrency`
+with script jobs in the existing `llm` queue. No separate `screen` queue is needed. Configure
 `screening.llm` explicitly: it has its own ordered fallback list and never
 inherits the script-generation `llm` list. Omitted source fields inherit defaults;
 explicit `enabled: false` overrides a global enablement, `llm` replaces the whole

@@ -186,6 +186,17 @@ Markdown 语法；出于安全考虑，Markdown 中的原始 HTML 不会执行�
 | `worker` | 只执行指定 River 队列 |
 | `run` | 同时运行 HTTP、调度器和全部队列 |
 
+### 恢复未完成节目
+
+`poll --resume-incomplete` 会恢复本次 RSS 拉取范围内没有活跃 River 任务的未完成节目，
+包括任务被取消或删除后遗留的 `content_ready`、`script_ready` 等中间状态。
+恢复从已保存的产物继续：无资料时重新获取，有资料但无脚本时先按配置筛选再生成脚本，
+有脚本时继续 TTS 并复用已有音频片段。已发布和已筛选跳过的节目不会重新生成；
+仍有排队、运行或等待重试任务的节目也不会重复入队。
+
+`--limit` 限制处理的 RSS 条目数，并非要生成的播客数量。单个节目也可通过回环管理 API
+`POST /api/v1/episodes/{episodeID}/retry` 恢复，不受当前 RSS 列表范围限制。
+
 ## Docker
 
 本地构建：
@@ -291,7 +302,7 @@ sources:
 ```
 
 筛选默认关闭，不增加 LLM 调用。开启后，在内容保存与脚本生成之间执行独立的
-`screen_content` River 任务，使用现有 `llm` 队列。`screening.llm` 必须显式配置，
+`screen_content` River 任务，使用现有 `llm` 队列，与脚本生成共享 `runtime.jobs.queues.llm.concurrency`，无需新增 `screen` 队列。`screening.llm` 必须显式配置，
 不会继承用于脚本生成的 `llm`；列表按顺序回退。source 未填写的字段继承 defaults，
 显式 `enabled: false` 可以覆盖全局开启；`llm` 整体替换，`instructions: ""` 清除继承的补充要求。
 
