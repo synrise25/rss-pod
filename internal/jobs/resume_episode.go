@@ -57,10 +57,15 @@ func ResumeEpisode(
 	if activeJob {
 		return ResumedEpisode{}, ErrEpisodeJobActive
 	}
-	// A queued job can be cancelled before River ever invokes its worker, so it
-	// never gets a chance to finalize the episode as failed. With no active River
-	// job left, queued is an orphaned state and is safe to recover explicitly.
-	if status != "failed" && status != "retrying" && status != "queued" {
+	// Jobs can disappear or be cancelled between stage handoffs, leaving the
+	// business state unchanged. Once no active River job remains, all known
+	// incomplete states can resume from durable artifacts. Keep terminal and
+	// unknown states ineligible, including successful editorial skips.
+	switch status {
+	case "queued", "resolving_content", "content_ready", "screening_content",
+		"generating_script", "script_ready", "generating_tts", "composing",
+		"retrying", "failed":
+	default:
 		return ResumedEpisode{}, ErrEpisodeNotRetryable
 	}
 

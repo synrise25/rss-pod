@@ -122,13 +122,22 @@ func TestPollResumeIncompleteFlagIntegration(t *testing.T) {
 func TestOnlyManualPollResumesIncompleteEpisodeIntegration(t *testing.T) {
 	for _, test := range []struct {
 		name             string
+		initialStatus    string
 		resumeIncomplete bool
 		wantStatus       string
 		wantJobs         int
 	}{
 		{name: "manual", resumeIncomplete: true, wantStatus: "queued", wantJobs: 1},
 		{name: "scheduled", resumeIncomplete: false, wantStatus: "retrying", wantJobs: 0},
+		{name: "orphaned content", initialStatus: "content_ready", resumeIncomplete: true, wantStatus: "queued", wantJobs: 1},
+		{name: "orphaned script", initialStatus: "script_ready", resumeIncomplete: true, wantStatus: "queued", wantJobs: 1},
+		{name: "no automatic recovery", initialStatus: "content_ready", wantStatus: "content_ready"},
+		{name: "published", initialStatus: "published", resumeIncomplete: true, wantStatus: "published"},
+		{name: "skipped", initialStatus: "skipped", resumeIncomplete: true, wantStatus: "skipped"},
 	} {
+		if test.initialStatus == "" {
+			test.initialStatus = "retrying"
+		}
 		t.Run(test.name, func(t *testing.T) {
 			pool := adminTestPool(t)
 			client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
@@ -158,13 +167,27 @@ func TestOnlyManualPollResumesIncompleteEpisodeIntegration(t *testing.T) {
 					VALUES ('test', 'existing-guid', 'Existing', 'old content') RETURNING id
 				)
 				INSERT INTO episodes (id, source_id, feed_item_id, title, status, error)
-				SELECT $1, 'test', id, 'Existing', 'retrying', 'job cancelled remotely' FROM item
-			`, episodeID)
+				SELECT $1, 'test', id, 'Existing', $2, 'job cancelled remotely' FROM item
+			`, episodeID, test.initialStatus)
 			if err != nil {
 				t.Fatal(err)
 			}
+			wantKind := "resolve_content"
+			if test.initialStatus == "content_ready" || test.initialStatus == "script_ready" {
+				if _, err := pool.Exec(ctx, `INSERT INTO documents (episode_id,position,content) VALUES ($1,0,'saved content')`, episodeID); err != nil {
+					t.Fatal(err)
+				}
+				wantKind = "screen_content"
+			}
+			if test.initialStatus == "script_ready" {
+				if _, err := pool.Exec(ctx, `INSERT INTO script_turns (episode_id,position,speaker_id,text) VALUES ($1,0,'host','saved script')`, episodeID); err != nil {
+					t.Fatal(err)
+				}
+				wantKind = "generate_tts"
+			}
+			screeningEnabled := true
 			cfg := &config.Config{
-				Defaults: config.DefaultsConfig{Limits: config.LimitsConfig{MaxFeedItemsPerRun: 10}},
+				Defaults: config.DefaultsConfig{Limits: config.LimitsConfig{MaxFeedItemsPerRun: 10}, Screening: config.ScreeningConfig{Enabled: &screeningEnabled}},
 				Sources:  []config.SourceConfig{{ID: "test", Enabled: true, Feed: config.FeedConfig{URL: feed.URL}}},
 			}
 			worker := &jobs.PollSourceWorker{Pool: pool, Config: cfg, River: client}
@@ -189,8 +212,8 @@ func TestOnlyManualPollResumesIncompleteEpisodeIntegration(t *testing.T) {
 			var jobsQueued int
 			if err := pool.QueryRow(ctx, `
 				SELECT count(*) FROM river_job
-				WHERE args->>'episode_id'=$1 AND kind='resolve_content' AND state='available'
-			`, episodeID).Scan(&jobsQueued); err != nil {
+				WHERE args->>'episode_id'=$1 AND kind=$2 AND state='available'
+			`, episodeID, wantKind).Scan(&jobsQueued); err != nil {
 				t.Fatal(err)
 			}
 			if jobsQueued != test.wantJobs {

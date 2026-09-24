@@ -369,7 +369,7 @@ func (s *Server) retryEpisode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if errors.Is(err, jobs.ErrEpisodeNotRetryable) {
-		writeError(w, http.StatusConflict, "only failed or orphaned retrying/queued episodes can be retried")
+		writeError(w, http.StatusConflict, "only incomplete episodes without active jobs can be retried")
 		return
 	}
 	if errors.Is(err, jobs.ErrEpisodeJobActive) {
