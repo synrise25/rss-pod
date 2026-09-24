@@ -94,11 +94,13 @@ const copy = {
 
 const adminCopy = localeKey === "zh-CN" ? {
   login: "管理员登录", code: "验证器动态码", hint: "输入验证器中的 6 位动态码，会话有效期 30 分钟。",
+  skipped: "最近跳过的内容（最多 100 条）", skippedEmpty: "暂无跳过的内容。", refresh: "刷新",
   logout: "退出管理", hide: "隐藏", restore: "恢复显示", hidden: "已隐藏",
   loginError: "动态码无效或已使用，请等待下一组动态码。", rateLimit: "尝试过于频繁，请等待一分钟。",
   expired: "会话已过期，请重新登录。", error: "操作失败，请稍后重试。",
 } : {
   login: "Admin login", code: "Authenticator code", hint: "Enter your 6-digit code. Sessions last 30 minutes.",
+  skipped: "Recently skipped (up to 100)", skippedEmpty: "No skipped content.", refresh: "Refresh",
   logout: "Sign out", hide: "Hide", restore: "Restore", hidden: "Hidden",
   loginError: "Invalid or already used code. Wait for the next code.", rateLimit: "Too many attempts. Wait one minute.",
   expired: "Session expired. Please sign in again.", error: "Operation failed. Please try again.",
@@ -1086,6 +1088,13 @@ async function setupAdmin() {
     </form><p id="admin-message" role="status" aria-live="polite"></p>
     <button id="admin-logout" type="button" hidden>${adminCopy.logout}</button>`;
   elements.dateTabs.before(panel);
+  const skipped = document.createElement("details");
+  skipped.className = "admin-skipped";
+  skipped.hidden = true;
+  skipped.innerHTML = `<summary>${adminCopy.skipped}</summary><button type="button">${adminCopy.refresh}</button><p role="status"></p><ul></ul>`;
+  panel.after(skipped);
+  skipped.addEventListener("toggle", () => { if (skipped.open) loadAdminSkipped(); });
+  skipped.querySelector("button").addEventListener("click", loadAdminSkipped);
   const logoutButton = panel.querySelector("#admin-logout");
   elements.languageSwitcher.before(logoutButton);
   const form = panel.querySelector("form");
@@ -1138,6 +1147,13 @@ function setAdminPlayerVisible(visible) {
   for (const element of [elements.dateTabs, elements.sourceFilterSection, elements.episodeRegion, elements.playerDock]) element.hidden = !visible;
   document.querySelector("#admin-login").hidden = visible;
   document.querySelector("#admin-logout").hidden = !visible;
+  const skipped = document.querySelector(".admin-skipped");
+  skipped.hidden = !visible;
+  if (!visible) {
+    skipped.open = false;
+    skipped.querySelector("ul").replaceChildren();
+    skipped.querySelector("p").textContent = "";
+  }
 }
 function showAdminLogin(message = "") {
   adminCSRF = "";
@@ -1186,4 +1202,36 @@ async function setAdminVisibility(episode) {
     const row = [...elements.episodeList.children].find((item) => item.dataset.episodeId === episode.id);
     row?.querySelector(".admin-visibility")?.focus();
   }
+}
+
+async function loadAdminSkipped() {
+  if (!adminCSRF) return;
+  const session = adminCSRF;
+  const section = document.querySelector(".admin-skipped");
+  const button = section.querySelector("button");
+  if (button.disabled) return;
+  button.disabled = true;
+  section.querySelector("p").textContent = copy.loading;
+  try {
+    const response = await adminFetch("/api/v1/admin/skipped");
+    if (adminCSRF !== session) return;
+    if (!response.ok) throw new Error("load skipped content");
+    const data = await response.json();
+    if (adminCSRF !== session) return;
+    const items = data.episodes.map((episode) => {
+      const item = document.createElement("li");
+      const title = document.createElement("strong");
+      title.textContent = episode.title;
+      const reason = document.createElement("p");
+      reason.textContent = episode.reason;
+      const meta = document.createElement("small");
+      meta.textContent = `${episode.source_id} · ${new Date(episode.created_at).toLocaleString(localeKey)} · ${episode.llm_service} / ${episode.model}`;
+      item.append(title, reason, meta);
+      return item;
+    });
+    section.querySelector("ul").replaceChildren(...items);
+    section.querySelector("p").textContent = items.length ? "" : adminCopy.skippedEmpty;
+  } catch {
+    if (adminCSRF === session) section.querySelector("p").textContent = adminCopy.error;
+  } finally { button.disabled = false; }
 }

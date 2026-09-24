@@ -209,6 +209,19 @@ defaults:
     - deepseek
     - gemini
 
+  # Optional editorial screening before script generation; no extra LLM calls when disabled.
+  # 脚本生成前的可选选题筛选；关闭时不额外调用 LLM。
+  screening:
+    # Defaults to false; sources can explicitly override true or false.
+    # 默认关闭；source 可以显式覆盖为 true 或 false。
+    enabled: false
+    # Independent services.llm references and fallback order; never inherits the script-generation list.
+    # 独立引用 services.llm 并按顺序回退；不会继承脚本生成的模型列表。
+    llm: [deepseek]
+    # Additional instructions appended to the built-in conservative screening policy.
+    # 追加到内置保守筛选规则后的补充要求。
+    instructions: ""
+
   generation:
     target_duration: 3m
     prompt_template: prompts/default-dialogue.tmpl
@@ -277,6 +290,16 @@ sources:
     generation:
       target_duration: 3m
       dialogue_profile: v2ex-commentary
+
+    # Screening fields inherit defaults individually; llm replaces the list, instructions replaces the text.
+    # screening 按字段继承 defaults；llm 整体替换列表，instructions 整体替换补充要求。
+    # Set enabled to true to screen this source; empty instructions clears inherited additions.
+    # 将 enabled 设为 true 可筛选此源；空 instructions 可清除继承的补充要求。
+    screening:
+      enabled: false
+      instructions: >-
+        跳过以推广、抽奖、赠码为主要目的且缺少实质讨论的内容。
+        有具体技术分享或有价值讨论时应保留。
 
     llm:
       - deepseek

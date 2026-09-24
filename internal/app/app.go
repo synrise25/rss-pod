@@ -109,6 +109,7 @@ func newRiverClient(cfg *config.Config, pool *pgxpool.Pool, queueNames []string)
 	scheduleSourcesWorker := &jobs.ScheduleSourcesWorker{Pool: pool, Config: cfg}
 	pollSourceWorker := &jobs.PollSourceWorker{Pool: pool, Config: cfg}
 	resolveContentWorker := &jobs.ResolveContentWorker{Pool: pool, Config: cfg}
+	screenContentWorker := &jobs.ScreenContentWorker{Pool: pool, Config: cfg}
 	generateScriptWorker := &jobs.GenerateScriptWorker{Pool: pool, Config: cfg}
 	generateTTSWorker := &jobs.GenerateTTSWorker{Pool: pool, Config: cfg, Storage: storageClient}
 	composeEpisodeWorker := &jobs.ComposeEpisodeWorker{Pool: pool, Storage: storageClient}
@@ -116,6 +117,7 @@ func newRiverClient(cfg *config.Config, pool *pgxpool.Pool, queueNames []string)
 	river.AddWorker(workers, scheduleSourcesWorker)
 	river.AddWorker(workers, pollSourceWorker)
 	river.AddWorker(workers, resolveContentWorker)
+	river.AddWorker(workers, screenContentWorker)
 	river.AddWorker(workers, generateScriptWorker)
 	river.AddWorker(workers, generateTTSWorker)
 	river.AddWorker(workers, composeEpisodeWorker)
@@ -153,6 +155,7 @@ func newRiverClient(cfg *config.Config, pool *pgxpool.Pool, queueNames []string)
 	scheduleSourcesWorker.River = client
 	pollSourceWorker.River = client
 	resolveContentWorker.River = client
+	screenContentWorker.River = client
 	generateScriptWorker.River = client
 	generateTTSWorker.River = client
 	return client, nil

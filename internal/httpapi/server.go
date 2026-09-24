@@ -186,19 +186,20 @@ func (s *Server) pollSource(w http.ResponseWriter, r *http.Request) {
 }
 
 type episode struct {
-	ID                   uuid.UUID  `json:"id"`
-	SourceID             string     `json:"source_id"`
-	FeedItemID           int64      `json:"feed_item_id"`
-	Title                string     `json:"title"`
-	Status               string     `json:"status"`
-	LLMService           string     `json:"llm_service,omitempty"`
-	AudioURL             string     `json:"audio_url,omitempty"`
-	AudioByteSize        int64      `json:"audio_byte_size,omitempty"`
-	AudioDurationSeconds int64      `json:"audio_duration_seconds,omitempty"`
-	Error                string     `json:"error,omitempty"`
-	CreatedAt            time.Time  `json:"created_at"`
-	UpdatedAt            time.Time  `json:"updated_at"`
-	PublishedAt          *time.Time `json:"published_at,omitempty"`
+	Screening            json.RawMessage `json:"screening,omitempty"`
+	ID                   uuid.UUID       `json:"id"`
+	SourceID             string          `json:"source_id"`
+	FeedItemID           int64           `json:"feed_item_id"`
+	Title                string          `json:"title"`
+	Status               string          `json:"status"`
+	LLMService           string          `json:"llm_service,omitempty"`
+	AudioURL             string          `json:"audio_url,omitempty"`
+	AudioByteSize        int64           `json:"audio_byte_size,omitempty"`
+	AudioDurationSeconds int64           `json:"audio_duration_seconds,omitempty"`
+	Error                string          `json:"error,omitempty"`
+	CreatedAt            time.Time       `json:"created_at"`
+	UpdatedAt            time.Time       `json:"updated_at"`
+	PublishedAt          *time.Time      `json:"published_at,omitempty"`
 }
 
 func (s *Server) listEpisodes(w http.ResponseWriter, r *http.Request) {
@@ -224,7 +225,10 @@ func (s *Server) listEpisodes(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := s.pool.Query(r.Context(), `
 		SELECT id, source_id, feed_item_id, title, status, llm_service,
-		       audio_url, audio_byte_size, audio_duration_seconds, error, created_at, updated_at, published_at
+		       audio_url, audio_byte_size, audio_duration_seconds, error, created_at, updated_at, published_at,
+         COALESCE((SELECT jsonb_build_object('decision', sc.decision, 'reason', sc.reason,
+          'llm_service', sc.llm_service, 'model', sc.model, 'created_at', sc.created_at)
+          FROM episode_screenings sc WHERE sc.episode_id=episodes.id), 'null'::jsonb)
 		FROM episodes
 		WHERE ($1 = '' OR source_id = $1)
 		  AND ($2 = '' OR status = $2)
@@ -241,7 +245,7 @@ func (s *Server) listEpisodes(w http.ResponseWriter, r *http.Request) {
 		var value episode
 		if err := rows.Scan(&value.ID, &value.SourceID, &value.FeedItemID, &value.Title, &value.Status,
 			&value.LLMService, &value.AudioURL, &value.AudioByteSize, &value.AudioDurationSeconds, &value.Error,
-			&value.CreatedAt, &value.UpdatedAt, &value.PublishedAt); err != nil {
+			&value.CreatedAt, &value.UpdatedAt, &value.PublishedAt, &value.Screening); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -263,11 +267,14 @@ func (s *Server) getEpisode(w http.ResponseWriter, r *http.Request) {
 	var value episode
 	err = s.pool.QueryRow(r.Context(), `
 		SELECT id, source_id, feed_item_id, title, status, llm_service,
-		       audio_url, audio_byte_size, audio_duration_seconds, error, created_at, updated_at, published_at
+		       audio_url, audio_byte_size, audio_duration_seconds, error, created_at, updated_at, published_at,
+         COALESCE((SELECT jsonb_build_object('decision', sc.decision, 'reason', sc.reason,
+          'llm_service', sc.llm_service, 'model', sc.model, 'created_at', sc.created_at)
+          FROM episode_screenings sc WHERE sc.episode_id=episodes.id), 'null'::jsonb)
 		FROM episodes WHERE id = $1
 	`, id).Scan(&value.ID, &value.SourceID, &value.FeedItemID, &value.Title, &value.Status,
 		&value.LLMService, &value.AudioURL, &value.AudioByteSize, &value.AudioDurationSeconds, &value.Error,
-		&value.CreatedAt, &value.UpdatedAt, &value.PublishedAt)
+		&value.CreatedAt, &value.UpdatedAt, &value.PublishedAt, &value.Screening)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "episode not found")
 		return
@@ -356,7 +363,7 @@ func (s *Server) retryEpisode(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback(r.Context())
 
-	resumed, err := jobs.ResumeEpisode(r.Context(), tx, s.river, id.String())
+	resumed, err := jobs.ResumeEpisode(r.Context(), tx, s.river, id.String(), s.config)
 	if errors.Is(err, jobs.ErrEpisodeNotFound) {
 		writeError(w, http.StatusNotFound, "episode not found")
 		return

@@ -60,6 +60,7 @@ func (s *adminServer) register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/admin/logout", s.guard(true, s.logout))
 	mux.HandleFunc("PATCH /api/v1/admin/episodes/{episodeID}/visibility", s.guard(true, s.setVisibility))
 	mux.HandleFunc("GET /api/v1/admin/episodes", s.guard(true, s.listEpisodes))
+	mux.HandleFunc("GET /api/v1/admin/skipped", s.guard(true, s.listSkipped))
 }
 
 func (s *adminServer) page(w http.ResponseWriter, _ *http.Request) {
@@ -283,4 +284,39 @@ func (s *adminServer) setVisibility(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"hidden": *input.Hidden})
+}
+
+// listSkipped exposes editorial decisions only, never service connection settings.
+func (s *adminServer) listSkipped(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.pool.Query(r.Context(), `SELECT e.id, e.source_id, e.title, sc.reason, sc.llm_service, sc.model, sc.created_at
+  FROM episodes e JOIN episode_screenings sc ON sc.episode_id=e.id
+  WHERE e.status='skipped' ORDER BY sc.created_at DESC, e.id LIMIT 100`)
+	if err != nil {
+		s.unavailable(w, err)
+		return
+	}
+	defer rows.Close()
+	type skippedEpisode struct {
+		ID         string    `json:"id"`
+		SourceID   string    `json:"source_id"`
+		Title      string    `json:"title"`
+		Reason     string    `json:"reason"`
+		LLMService string    `json:"llm_service"`
+		Model      string    `json:"model"`
+		CreatedAt  time.Time `json:"created_at"`
+	}
+	items := make([]skippedEpisode, 0)
+	for rows.Next() {
+		var item skippedEpisode
+		if err := rows.Scan(&item.ID, &item.SourceID, &item.Title, &item.Reason, &item.LLMService, &item.Model, &item.CreatedAt); err != nil {
+			s.unavailable(w, err)
+			return
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		s.unavailable(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"episodes": items})
 }

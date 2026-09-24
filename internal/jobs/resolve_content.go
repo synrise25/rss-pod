@@ -116,7 +116,11 @@ func (w *ResolveContentWorker) resolve(ctx context.Context, episodeID string, jo
 			return fmt.Errorf("store document: %w", err)
 		}
 	}
-	inserted, err := w.River.InsertTx(ctx, tx, GenerateScriptArgs{EpisodeID: episodeID}, nil)
+	var next river.JobArgs = GenerateScriptArgs{EpisodeID: episodeID}
+	if w.Config.EffectiveScreening(source).IsEnabled() {
+		next = ScreenContentArgs{EpisodeID: episodeID}
+	}
+	inserted, err := w.River.InsertTx(ctx, tx, next, nil)
 	if err != nil {
 		return fmt.Errorf("enqueue script generation: %w", err)
 	}

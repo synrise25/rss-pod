@@ -106,7 +106,7 @@ CREATE TABLE IF NOT EXISTS episodes (
     status         text NOT NULL CHECK (status IN (
                        'queued', 'resolving_content', 'content_ready',
                        'generating_script', 'script_ready', 'generating_tts',
-                       'composing', 'published', 'retrying', 'failed'
+                       'composing', 'published', 'retrying', 'failed', 'screening_content', 'skipped'
     )),
     llm_service    text NOT NULL DEFAULT '',
     audio_object_key text NOT NULL DEFAULT '',
@@ -122,6 +122,23 @@ CREATE TABLE IF NOT EXISTS episodes (
 
 ALTER TABLE episodes ADD COLUMN IF NOT EXISTS hidden_at timestamptz;
 ALTER TABLE episodes ADD COLUMN IF NOT EXISTS active_job_id bigint;
+
+-- Replace the original constraint as well as supporting fresh installations.
+ALTER TABLE episodes DROP CONSTRAINT IF EXISTS episodes_status_check;
+ALTER TABLE episodes ADD CONSTRAINT episodes_status_check CHECK (status IN (
+ 'queued', 'resolving_content', 'content_ready', 'screening_content', 'skipped',
+ 'generating_script', 'script_ready', 'generating_tts', 'composing', 'published', 'retrying', 'failed'
+));
+
+CREATE TABLE IF NOT EXISTS episode_screenings (
+ episode_id uuid PRIMARY KEY REFERENCES episodes(id) ON DELETE CASCADE,
+ input_hash text NOT NULL,
+ decision text NOT NULL CHECK (decision IN ('allow', 'skip')),
+ reason text NOT NULL,
+ llm_service text NOT NULL,
+ model text NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT now()
+);
 
 CREATE INDEX IF NOT EXISTS episodes_source_created_idx
     ON episodes (source_id, created_at DESC);

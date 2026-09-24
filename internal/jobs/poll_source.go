@@ -185,7 +185,7 @@ func (w *PollSourceWorker) poll(ctx context.Context, args PollSourceArgs) error 
 			`, feedItemID).Scan(&existingEpisodeID); err != nil {
 				return fmt.Errorf("load existing episode for resume: %w", err)
 			}
-			if _, err := ResumeEpisode(ctx, tx, w.River, existingEpisodeID); err != nil &&
+			if _, err := ResumeEpisode(ctx, tx, w.River, existingEpisodeID, w.Config); err != nil &&
 				!errors.Is(err, ErrEpisodeNotRetryable) && !errors.Is(err, ErrEpisodeJobActive) {
 				return fmt.Errorf("resume existing episode: %w", err)
 			}

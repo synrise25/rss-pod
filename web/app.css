@@ -1338,3 +1338,14 @@ input:focus-visible {
     font-size: 13px;
   }
 }
+
+.admin-skipped { margin: 0 0 20px; padding: 16px; border: 1px solid #bfd2e2; border-radius: 16px; background: #f4f9ff; font-size: 14px; overflow-wrap: anywhere; }
+.admin-skipped summary { cursor: pointer; color: #244560; }
+.admin-skipped button { margin-top: 12px; padding: 6px 12px; border: 1px solid #bfd2e2; border-radius: 8px; background: white; color: #244560; font: inherit; cursor: pointer; }
+.admin-skipped button:disabled { opacity: .5; cursor: wait; }
+.admin-skipped :focus-visible { outline: 3px solid #2584c4; outline-offset: 3px; }
+.admin-skipped ul { list-style: none; padding: 0; max-height: 440px; overflow-y: auto; }
+.admin-skipped li { padding: 12px 0; border-bottom: 1px solid #d9e5ee; }
+.admin-skipped li:last-child { border-bottom: 0; }
+.admin-skipped p { line-height: 1.6; margin: 8px 0; }
+.admin-skipped small { color: #516a7e; }

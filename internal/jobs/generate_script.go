@@ -1,16 +1,11 @@
 package jobs
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
 	"os"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
@@ -64,8 +59,11 @@ func (w *GenerateScriptWorker) generate(ctx context.Context, episodeID string, j
 	if !ok {
 		return permanent("unknown source %q", sourceID)
 	}
-	documents, err := w.loadDocuments(ctx, episodeID)
+	documents, err := loadEpisodeDocuments(ctx, w.Pool, episodeID)
 	if err != nil {
+		return err
+	}
+	if routed, err := w.routeToScreening(ctx, episodeID, jobID, source, documents); err != nil || routed {
 		return err
 	}
 	generation := w.Config.EffectiveGeneration(source)
@@ -194,8 +192,8 @@ func (w *GenerateScriptWorker) loadSpeakers(ctx context.Context, episodeID strin
 	return speakers, nil
 }
 
-func (w *GenerateScriptWorker) loadDocuments(ctx context.Context, episodeID string) ([]llmDocument, error) {
-	rows, err := w.Pool.Query(ctx, `
+func loadEpisodeDocuments(ctx context.Context, pool *pgxpool.Pool, episodeID string) ([]llmDocument, error) {
+	rows, err := pool.Query(ctx, `
 		SELECT position, title, source_url, content
 		FROM documents WHERE episode_id = $1 ORDER BY position
 	`, episodeID)
@@ -319,61 +317,11 @@ func writeRunes(builder *strings.Builder, value string, limit int) (int, bool) {
 }
 
 func callLLM(ctx context.Context, service config.LLMService, systemPrompt, userPrompt string, speakers []config.SpeakerConfig) (generatedScript, []byte, bool, error) {
-	timeout, err := time.ParseDuration(service.Timeout)
+	content, retryable, err := callLLMCompletion(ctx, service, systemPrompt, userPrompt, 0.7)
 	if err != nil {
-		return generatedScript{}, nil, false, fmt.Errorf("invalid timeout: %w", err)
+		return generatedScript{}, nil, retryable, err
 	}
-	requestBody := map[string]any{
-		"model": service.Model,
-		"messages": []map[string]string{
-			{"role": "system", "content": systemPrompt},
-			{"role": "user", "content": userPrompt},
-		},
-		"temperature": 0.7,
-	}
-	body, err := json.Marshal(requestBody)
-	if err != nil {
-		return generatedScript{}, nil, false, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(service.BaseURL, "/")+"/chat/completions", bytes.NewReader(body))
-	if err != nil {
-		return generatedScript{}, nil, false, err
-	}
-	req.Header.Set("Authorization", "Bearer "+service.APIKey)
-	req.Header.Set("Content-Type", "application/json")
-	client, err := contentHTTPClient(service.Proxy, timeout)
-	if err != nil {
-		return generatedScript{}, nil, false, fmt.Errorf("invalid proxy: %w", err)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return generatedScript{}, nil, true, err
-	}
-	defer resp.Body.Close()
-	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-	if err != nil {
-		return generatedScript{}, nil, true, err
-	}
-	if resp.StatusCode == http.StatusRequestTimeout || resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
-		return generatedScript{}, nil, true, fmt.Errorf("HTTP %d", resp.StatusCode)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return generatedScript{}, nil, false, fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(string(responseBody), 500))
-	}
-	var completion struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-	if err := json.Unmarshal(responseBody, &completion); err != nil {
-		return generatedScript{}, nil, true, fmt.Errorf("decode completion: %w", err)
-	}
-	if len(completion.Choices) == 0 {
-		return generatedScript{}, nil, true, fmt.Errorf("completion contains no choices")
-	}
-	rawScript := extractJSONObject(completion.Choices[0].Message.Content)
+	rawScript := extractJSONObject(content)
 	script, canonical, repairs, err := decodeGeneratedScript(rawScript, speakers)
 	if err != nil {
 		return generatedScript{}, nil, true, fmt.Errorf("decode script JSON: %w", err)

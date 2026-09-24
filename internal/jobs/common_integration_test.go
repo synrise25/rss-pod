@@ -14,6 +14,7 @@ import (
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivertype"
 
+	"github.com/synrise25/rss-pod/internal/config"
 	"github.com/synrise25/rss-pod/internal/database"
 )
 
@@ -92,7 +93,7 @@ func TestStaleCancelledWorkerDoesNotOverwriteCompletedResumedEpisodeIntegration(
 	if err != nil {
 		t.Fatal(err)
 	}
-	resumed, err := ResumeEpisode(ctx, tx, client, episodeID)
+	resumed, err := ResumeEpisode(ctx, tx, client, episodeID, &config.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +149,7 @@ func TestSupersededWorkerCannotOverwriteResumedQueuedStatusIntegration(t *testin
 		t.Fatal(err)
 	}
 	defer tx.Rollback(ctx)
-	resumed, err := ResumeEpisode(ctx, tx, client, episodeID)
+	resumed, err := ResumeEpisode(ctx, tx, client, episodeID, &config.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +245,7 @@ func TestCancelledQueuedEpisodeCanBeResumedIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer tx.Rollback(ctx)
-	resumed, err := ResumeEpisode(ctx, tx, client, episodeID)
+	resumed, err := ResumeEpisode(ctx, tx, client, episodeID, &config.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,7 +303,7 @@ func TestResumeAndStageHandoffUseSameLockOrderIntegration(t *testing.T) {
 		}
 		defer tx.Rollback(resumeCtx)
 		close(resumeStarted)
-		_, err = ResumeEpisode(resumeCtx, tx, client, episodeID)
+		_, err = ResumeEpisode(resumeCtx, tx, client, episodeID, &config.Config{})
 		resumeResult <- err
 	}()
 	<-resumeStarted

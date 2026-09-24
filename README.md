@@ -65,7 +65,9 @@ set of choices. That narrower focus led to rss-pod.
 flowchart LR
     RSS[RSS feeds] --> Source[source]
     Source --> Content[content]
-    Content --> LLM[LLM script]
+    Content --> Screening{optional screening}
+    Screening -->|allow or disabled| LLM[LLM script]
+    Screening -->|skip| Skipped[record skip reason]
     LLM --> TTS[TTS segments]
     TTS --> Media[media publish]
     Media --> Player[web player]
@@ -307,12 +309,68 @@ Documents produced by derived RSS; it does not limit replies inside this
 Document. Source material is truncated at rss-pod's 120,000-character LLM
 prompt limit, with a warning log that excludes content and URLs.
 
+### Optional content screening
+
+Configure screening services under `defaults.screening`, then override individual
+fields in a source's `screening` block:
+
+```yaml
+defaults:
+  screening:
+    enabled: false
+    llm: [deepseek]  # Reference a low-cost model configured under services.llm
+    instructions: ""
+
+sources:
+  - id: v2ex-hot
+    # Keep the remaining source configuration
+    screening:
+      enabled: true
+      instructions: >-
+        Skip content primarily promoting products, giveaways, or activation codes
+        when it lacks substantive discussion. Keep concrete technical insights
+        and useful discussions.
+```
+
+Screening is disabled by default and adds no LLM calls while disabled. When
+enabled, an independent `screen_content` River job runs after content is saved
+and before script generation, using the existing `llm` queue. Configure
+`screening.llm` explicitly: it has its own ordered fallback list and never
+inherits the script-generation `llm` list. Omitted source fields inherit defaults;
+explicit `enabled: false` overrides a global enablement, `llm` replaces the whole
+list, and `instructions: ""` clears inherited additional instructions.
+
+The built-in policy skips only content clearly lacking substance, such as pure
+promotions, giveaways, or repetitive participation replies. It preserves useful
+information, experiences, and discussions, including uncertain cases. Custom
+instructions are appended to that policy. Screening uses the same source material
+as script generation without extra reply sampling, retaining the existing
+120,000-character input limit and truncation warning. This is an application
+character limit, not a model token limit; choose a model that supports your input.
+
+Decisions (`allow` or `skip`), reasons, service names, and model names are stored
+in PostgreSQL. Retries reuse decisions for unchanged content, policy, and model
+configuration; resuming an incomplete episode re-evaluates changed inputs.
+`skipped` is a normal terminal state: no script or audio is generated, and later
+polls or ordinary failure retries do not enqueue it again. Timeouts, rate limits,
+server errors, and invalid JSON trigger fallback or retries, ending in `failed`
+when attempts are exhausted. Non-retryable configuration or authentication
+errors fail immediately. Recovery checks screening instead of bypassing it.
+
+After signing in at `/admin`, expand **Recently skipped** to see up to 100 recent
+results and their reasons. The loopback management API's episode list and detail
+responses also include `screening`; use `GET /api/v1/episodes?status=skipped` to
+filter the list. The public player and podcast RSS show only published episodes.
+Run the existing `migrate` command before starting the upgraded application to
+add the screening table and statuses. Existing configuration remains valid and
+the configuration version stays at 6.
+
 ## Security model
 
 The public listener serves the player and read-only `/api/v1/player/*` routes
 by default. Configuring the admin environment variables additionally enables
 TOTP-protected `/admin` and `/api/v1/admin/*` routes for hiding and restoring
-episodes. Health checks, polling, retries, database-backed queries, and podcast
+episodes and viewing skip reasons. Health checks, polling, retries, database-backed queries, and podcast
 management routes are bound to a loopback-only listener. Do not publish the
 management port from a container or reverse proxy it to the internet.
 

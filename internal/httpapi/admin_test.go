@@ -50,7 +50,7 @@ func TestTOTPRFC6238(t *testing.T) {
 
 func TestAdminDisabledAndGuard(t *testing.T) {
 	mux := newPlayerMux(&playerServer{})
-	for _, path := range []string{"/admin", "/admin/en", "/admin/zh-cn", "/admin/", "/admin/en/", "/admin/zh-cn/", "/api/v1/admin/session", "/api/v1/admin/episodes"} {
+	for _, path := range []string{"/admin", "/admin/en", "/admin/zh-cn", "/admin/", "/admin/en/", "/admin/zh-cn/", "/api/v1/admin/session", "/api/v1/admin/episodes", "/api/v1/admin/skipped"} {
 		rr := httptest.NewRecorder()
 		mux.ServeHTTP(rr, httptest.NewRequest("GET", path, nil))
 		if rr.Code != 404 {
@@ -64,7 +64,7 @@ func TestAdminDisabledAndGuard(t *testing.T) {
 		status               int
 	}{
 		{"GET", "/admin", "", 200}, {"GET", "/admin/en", "", 200}, {"GET", "/admin/zh-cn", "", 200},
-		{"GET", "/api/v1/admin/episodes", "", 401}, {"GET", "/api/v1/admin/session", "", 401},
+		{"GET", "/api/v1/admin/episodes", "", 401}, {"GET", "/api/v1/admin/skipped", "", 401}, {"GET", "/api/v1/admin/session", "", 401},
 		{"POST", "/api/v1/admin/login", "", 403}, {"POST", "/api/v1/admin/login", "https://evil.example", 403},
 		{"PATCH", "/api/v1/admin/episodes/invalid/visibility", testAdminOrigin, 401},
 	} {
