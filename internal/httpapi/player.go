@@ -249,8 +249,9 @@ func (s *playerServer) parseEditionBoundary(w http.ResponseWriter, value, field 
 	if date, err := time.Parse("2006-01-02", value); err == nil {
 		return date.Format("2006-01-02"), true
 	}
-	stamp, ok := parseOptionalRFC3339(w, value, field)
-	if !ok {
+	stamp, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, field+" must be a YYYY-MM-DD date or an RFC3339 timestamp")
 		return "", false
 	}
 	location, err := time.LoadLocation(s.dateTimezone())

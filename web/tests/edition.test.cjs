@@ -12,7 +12,7 @@ function fixture() {
   const context = vm.createContext({
     Date: Clock, Intl, URLSearchParams, console,
     copy: { relativeDates: ['Today', 'Yesterday', 'Earlier'], dateLocale: 'en', untitled: 'Untitled' },
-    state: {}, isAdminPage: false,
+    state: { activeDate: "2026-09-26" }, isAdminPage: false,
     fetch: async url => {
       requests.push(url);
       return { ok: true, json: async () => url.endsWith('/sources')
@@ -36,6 +36,7 @@ test('calendar and query boundaries use project timezone', async () => {
   const { context: c, requests } = fixture();
   await c.fetchPlayerData();
   assert.equal(c.state.dateOptions[0].key, '2026-09-27');
+  assert.equal(c.state.activeDate, '2026-09-27');
   assert.equal(c.state.dateOptions[1].key, '2026-09-26');
   const params = new URL(requests[1], 'https://example.com').searchParams;
   assert.equal(params.get('since'), '2026-09-25');

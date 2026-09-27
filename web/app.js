@@ -277,6 +277,7 @@ async function fetchPlayerData() {
   }).formatToParts(new Date());
   const part = (name) => todayKey.find((value) => value.type === name).value;
   state.dateOptions = createDateOptions(new Date(Number(part("year")), Number(part("month")) - 1, Number(part("day"))));
+  state.activeDate = state.dateOptions[0].key;
   const params = new URLSearchParams({
     since: state.dateOptions[state.dateOptions.length - 1].key,
     before: dateKey(addDays(state.dateOptions[0].date, 1)),
