@@ -97,6 +97,15 @@ func (w *PollSourceWorker) poll(ctx context.Context, args PollSourceArgs) error 
 	}
 	defer tx.Rollback(ctx)
 
+	// Anchor the edition to submission, even when polling itself waits overnight.
+	var editionDate string
+	if err := tx.QueryRow(ctx, `
+		SELECT to_char(COALESCE(scheduled_for, created_at) AT TIME ZONE COALESCE(NULLIF($2, ''), 'UTC'), 'YYYY-MM-DD')
+		FROM source_runs WHERE id = $1
+	`, args.RunID, w.Config.Defaults.Schedule.Timezone).Scan(&editionDate); err != nil {
+		return fmt.Errorf("load source run edition date: %w", err)
+	}
+
 	itemsNew := 0
 	itemsExisting := 0
 	for _, item := range feed.Items[:limit] {
@@ -137,11 +146,11 @@ func (w *PollSourceWorker) poll(ctx context.Context, args PollSourceArgs) error 
 		episodeID := uuid.New()
 		var insertedEpisodeID string
 		err = tx.QueryRow(ctx, `
-			INSERT INTO episodes (id, source_id, feed_item_id, title, status)
-			VALUES ($1, $2, $3, $4, 'queued')
+			INSERT INTO episodes (id, source_id, feed_item_id, title, status, edition_date)
+			VALUES ($1, $2, $3, $4, 'queued', $5::date)
 			ON CONFLICT (feed_item_id) DO NOTHING
 			RETURNING id::text
-		`, episodeID, source.ID, feedItemID, item.Title).Scan(&insertedEpisodeID)
+		`, episodeID, source.ID, feedItemID, item.Title, editionDate).Scan(&insertedEpisodeID)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("create episode: %w", err)
 		}

@@ -24,6 +24,7 @@ type playerServer struct {
 	pool       *pgxpool.Pool
 	sources    []playerSource
 	noticeFile string
+	timezone   string
 }
 
 const maxNoticeBytes = 64 << 10
@@ -45,13 +46,14 @@ func newPlayerServer(cfg *config.Config, pool *pgxpool.Pool) *playerServer {
 	}
 	return &playerServer{
 		pool:       pool,
+		timezone:   cfg.Defaults.Schedule.Timezone,
 		sources:    sources,
 		noticeFile: strings.TrimSpace(cfg.Runtime.HTTP.NoticeFile),
 	}
 }
 
 func (s *playerServer) listSources(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"sources": s.sources})
+	writeJSON(w, http.StatusOK, map[string]any{"sources": s.sources, "timezone": s.dateTimezone()})
 }
 
 func (s *playerServer) notice(w http.ResponseWriter, r *http.Request) {
@@ -124,6 +126,7 @@ func matchesETag(headerValues []string, current string) bool {
 }
 
 type playerEpisode struct {
+	EditionDate          string     `json:"edition_date"`
 	Hidden               bool       `json:"hidden,omitempty"`
 	ID                   uuid.UUID  `json:"id"`
 	SourceID             string     `json:"source_id"`
@@ -150,33 +153,38 @@ func (s *playerServer) episodes(w http.ResponseWriter, r *http.Request, includeH
 		limit = parsed
 	}
 
-	since, ok := parseOptionalRFC3339(w, r.URL.Query().Get("since"), "since")
+	since, ok := s.parseEditionBoundary(w, r.URL.Query().Get("since"), "since")
 	if !ok {
 		return
 	}
-	before, ok := parseOptionalRFC3339(w, r.URL.Query().Get("before"), "before")
+	before, ok := s.parseEditionBoundary(w, r.URL.Query().Get("before"), "before")
 	if !ok {
 		return
 	}
-	if since != nil && before != nil && !since.Before(*before) {
+	if since != "" && before != "" && since >= before {
 		writeError(w, http.StatusBadRequest, "since must be before before")
 		return
 	}
 
 	sourceID := r.URL.Query().Get("source_id")
 	rows, err := s.pool.Query(r.Context(), `
+		WITH dated_episodes AS (
+		    -- Temporary compatibility for episodes created before edition dates.
+		    SELECT *, COALESCE(edition_date, (created_at AT TIME ZONE $6)::date) AS display_date
+		    FROM episodes
+		)
 		SELECT e.id, e.source_id, e.title, e.audio_url, e.audio_byte_size, e.audio_duration_seconds,
-		       e.published_at, f.published_at, e.hidden_at IS NOT NULL
-		FROM episodes e
+		       e.published_at, f.published_at, e.hidden_at IS NOT NULL, to_char(e.display_date, 'YYYY-MM-DD')
+		FROM dated_episodes e
 		JOIN feed_items f ON f.id = e.feed_item_id
 		WHERE e.status = 'published' AND e.audio_url <> ''
 		  AND ($5 OR e.hidden_at IS NULL)
 		  AND ($1 = '' OR e.source_id = $1)
-		  AND ($2::timestamptz IS NULL OR e.published_at >= $2)
-		  AND ($3::timestamptz IS NULL OR e.published_at < $3)
-		ORDER BY e.published_at DESC NULLS LAST
+		  AND (NULLIF($2, '')::date IS NULL OR e.display_date >= NULLIF($2, '')::date)
+		  AND (NULLIF($3, '')::date IS NULL OR e.display_date < NULLIF($3, '')::date)
+		ORDER BY e.display_date DESC, e.published_at DESC NULLS LAST, e.id
 		LIMIT $4
-	`, sourceID, since, before, limit, includeHidden)
+	`, sourceID, since, before, limit, includeHidden, s.dateTimezone())
 	if err != nil {
 		slog.Error("query player episodes", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to load episodes")
@@ -197,6 +205,7 @@ func (s *playerServer) episodes(w http.ResponseWriter, r *http.Request, includeH
 			&episode.PublishedAt,
 			&episode.OriginalPublishedAt,
 			&episode.Hidden,
+			&episode.EditionDate,
 		); err != nil {
 			slog.Error("scan player episode", "error", err)
 			writeError(w, http.StatusInternalServerError, "failed to load episodes")
@@ -223,4 +232,32 @@ func parseOptionalRFC3339(w http.ResponseWriter, value, field string) (*time.Tim
 		return nil, false
 	}
 	return &parsed, true
+}
+
+func (s *playerServer) dateTimezone() string {
+	if s.timezone == "" {
+		return "UTC"
+	}
+	return s.timezone
+}
+
+// Date-only boundaries use edition days; RFC3339 remains accepted for API clients.
+func (s *playerServer) parseEditionBoundary(w http.ResponseWriter, value, field string) (string, bool) {
+	if value == "" {
+		return "", true
+	}
+	if date, err := time.Parse("2006-01-02", value); err == nil {
+		return date.Format("2006-01-02"), true
+	}
+	stamp, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, field+" must be a YYYY-MM-DD date or an RFC3339 timestamp")
+		return "", false
+	}
+	location, err := time.LoadLocation(s.dateTimezone())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "invalid player timezone")
+		return "", false
+	}
+	return stamp.In(location).Format("2006-01-02"), true
 }
