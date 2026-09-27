@@ -120,6 +120,8 @@ CREATE TABLE IF NOT EXISTS episodes (
     published_at   timestamptz
 );
 
+ALTER TABLE episodes ADD COLUMN IF NOT EXISTS edition_date date;
+
 ALTER TABLE episodes ADD COLUMN IF NOT EXISTS hidden_at timestamptz;
 ALTER TABLE episodes ADD COLUMN IF NOT EXISTS active_job_id bigint;
 

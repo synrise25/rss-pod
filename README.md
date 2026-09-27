@@ -121,6 +121,17 @@ listener. `/` redirects from the browser's preferred language to the stable
 English route at `/en` or Simplified Chinese at `/zh-cn`; the language switcher
 keeps the current query string.
 
+Episodes are grouped by their task's edition date: scheduled tasks use the planned
+trigger date, and manual tasks use the submission date, in
+`defaults.schedule.timezone`. Overnight queueing, generation time and retries do
+not change that date. The player opens the latest date with playable episodes;
+RSS publication timestamps still reflect actual audio publication. Episodes
+created before this upgrade temporarily use their creation date without trying to
+reconstruct their original run. The player API returns `edition_date`
+(`YYYY-MM-DD`); `since` (inclusive) and `before` (exclusive) filter edition dates
+and accept date strings. Existing RFC3339 parameters are converted to dates in
+the configured timezone.
+
 During playback, once the current audio is fully buffered, the player preloads
 one upcoming episode in the current date and feed selection. Switching to that
 episode reuses the buffered audio; changing filters or skipping to another episode

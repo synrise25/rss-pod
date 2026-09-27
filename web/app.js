@@ -257,7 +257,7 @@ async function loadPlayer() {
     state.episodes = payload.episodes
       .map(normalizeEpisode)
       .filter((episode) => episode.id && episode.audioURL)
-      .sort((a, b) => b.sortTime - a.sortTime);
+      .sort((a, b) => b.dayKey.localeCompare(a.dayKey) || b.sortTime - a.sortTime);
 
     selectInitialEpisode();
   } catch (error) {
@@ -269,18 +269,20 @@ async function loadPlayer() {
 }
 
 async function fetchPlayerData() {
-  const start = startOfDay(state.dateOptions[state.dateOptions.length - 1].date);
-  const before = startOfDay(addDays(state.dateOptions[0].date, 1));
+  const sourcesResponse = await fetch("/api/v1/player/sources", { headers: { Accept: "application/json" } });
+  if (!sourcesResponse.ok) throw new Error(`player API returned ${sourcesResponse.status}`);
+  const sourcesPayload = await sourcesResponse.json();
+  const todayKey = new Intl.DateTimeFormat("en-CA", {
+    timeZone: sourcesPayload.timezone || "UTC", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date());
+  const part = (name) => todayKey.find((value) => value.type === name).value;
+  state.dateOptions = createDateOptions(new Date(Number(part("year")), Number(part("month")) - 1, Number(part("day"))));
   const params = new URLSearchParams({
-    since: start.toISOString(),
-    before: before.toISOString(),
+    since: state.dateOptions[state.dateOptions.length - 1].key,
+    before: dateKey(addDays(state.dateOptions[0].date, 1)),
     limit: "500",
   });
-
-  const [sourcesResponse, episodesResponse] = await Promise.all([
-    fetch("/api/v1/player/sources", { headers: { Accept: "application/json" } }),
-    fetch(`/api/v1/${isAdminPage ? "admin" : "player"}/episodes?${params}`, { headers: { Accept: "application/json" } }),
-  ]);
+  const episodesResponse = await fetch(`/api/v1/${isAdminPage ? "admin" : "player"}/episodes?${params}`, { headers: { Accept: "application/json" } });
 
   if (isAdminPage && episodesResponse.status === 401) {
     showAdminLogin(adminCopy.expired);
@@ -290,10 +292,7 @@ async function fetchPlayerData() {
     throw new Error(`player API returned ${sourcesResponse.status}/${episodesResponse.status}`);
   }
 
-  const [sourcesPayload, episodesPayload] = await Promise.all([
-    sourcesResponse.json(),
-    episodesResponse.json(),
-  ]);
+  const episodesPayload = await episodesResponse.json();
   return {
     sources: Array.isArray(sourcesPayload.sources) ? sourcesPayload.sources : [],
     episodes: Array.isArray(episodesPayload.episodes) ? episodesPayload.episodes : [],
@@ -663,7 +662,7 @@ function normalizeEpisode(episode) {
     audioURL: String(episode.audio_url || ""),
     publishedAt,
     durationSeconds: Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : null,
-    dayKey: publishedAt ? dateKey(publishedAt) : "",
+    dayKey: episode.edition_date || (publishedAt ? dateKey(publishedAt) : ""),
     sortTime: publishedAt?.getTime() || 0,
   };
 }
@@ -759,8 +758,8 @@ function updateGreeting() {
   elements.greeting.textContent = isAdminPage ? (localeKey === "zh-CN" ? "播客管理" : "Manage podcasts") : copy.greeting(greeting);
 }
 
-function createDateOptions() {
-  const today = startOfDay(new Date());
+function createDateOptions(now = new Date()) {
+  const today = startOfDay(now);
   return [
     { relativeLabel: copy.relativeDates[0], date: today },
     { relativeLabel: copy.relativeDates[1], date: addDays(today, -1) },
