@@ -344,9 +344,9 @@ the script-generation model list.
 ```yaml
 services:
   jev:
-    base_url: https://api.typesafe.ai/v1 # Excludes /systemone
+    base_url: env://JEV_BASE_URL # Excludes /systemone
     api_key: env://JEV_API_KEY
-    model: jev-1.13.0
+    model: env://JEV_MODEL
     timeout: 30s
     proxy: ""
   # Keep the existing services.llm configuration
@@ -365,6 +365,10 @@ sources:
     screening:
       enabled: false
 ```
+
+Copy the Jev variables from `.env.example` into your local `.env`: `JEV_BASE_URL`,
+`JEV_API_KEY`, and `JEV_MODEL`. The API key is empty by default. Set `timeout`
+directly in YAML; no `JEV_TIMEOUT` variable is required.
 
 `services` is an ordered chain: `jev` references `services.jev`, and
 `llm.<name>` references `services.llm`. A valid `allow` or `skip` ends screening.

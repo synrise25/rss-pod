@@ -118,13 +118,13 @@ services:
   jev:
     # API base URL, excluding /systemone.
     # API 基础地址，不含 /systemone。
-    base_url: https://api.typesafe.ai/v1
+    base_url: env://JEV_BASE_URL
     # Set a key locally before enabling Jev screening.
     # 启用 Jev 筛选前在本地填写密钥。
-    api_key: ""
+    api_key: env://JEV_API_KEY
     # Pin a version so cached decisions remain reproducible.
     # 固定版本，避免模型别名更新后复用旧判断。
-    model: jev-1.13.0
+    model: env://JEV_MODEL
     # Optional HTTP proxy; empty uses the default transport.
     # 可选 HTTP 代理；留空使用默认传输。
     proxy: ""
