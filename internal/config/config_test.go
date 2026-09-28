@@ -445,7 +445,7 @@ func TestRuntimeTimeoutValidation(t *testing.T) {
 }
 
 const minimalConfig = `
-version: 6
+version: 7
 runtime:
   http: {listen: ":8080"}
   database: {type: postgres, host: localhost, port: 5432, name: rsspod, user: app, password: PASSWORD, ssl_mode: disable}

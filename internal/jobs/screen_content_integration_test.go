@@ -212,3 +212,73 @@ func TestScreeningMigratesExistingEpisodeConstraintIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestJevPersistenceAndRoutingIntegration(t *testing.T) {
+	for _, mode := range []string{"allow", "skip", "fallback"} {
+		t.Run(mode, func(t *testing.T) {
+			pool := jobsTestPool(t)
+			ctx := context.Background()
+			calls := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if r.URL.Path == "/systemone" {
+					if mode == "fallback" {
+						w.WriteHeader(400)
+						w.Write([]byte(`{"detail":{"error_type":"max_tokens_exceeded"}}`))
+						return
+					}
+					probability := "0.1"
+					if mode == "skip" {
+						probability = "0.9"
+					}
+					w.Write([]byte(`{"model":"jev-resolved","answers":{"skip":{"type":"noul","noul":` + probability + `}}}`))
+					return
+				}
+				writeScreeningCompletion(w, `{"decision":"allow","reason":"fallback"}`)
+			}))
+			defer server.Close()
+			cfg := screeningTestConfig(server.URL)
+			cfg.Defaults.Screening.Services = []string{"jev", "llm.cheap"}
+			cfg.Services.Jev = config.LLMService{BaseURL: server.URL, Model: "jev-configured", Timeout: "1s"}
+			client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			id := seedRetryingEpisode(t, pool, "jev-"+mode)
+			if _, err := pool.Exec(ctx, `INSERT INTO documents (episode_id,position,content) VALUES ($1,0,'substantive content')`, id); err != nil {
+				t.Fatal(err)
+			}
+			job, err := client.Insert(ctx, ScreenContentArgs{EpisodeID: id}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			worker := &ScreenContentWorker{Pool: pool, Config: cfg, River: client}
+			if err := worker.Work(ctx, &river.Job[ScreenContentArgs]{JobRow: job.Job, Args: ScreenContentArgs{EpisodeID: id}}); err != nil {
+				t.Fatal(err)
+			}
+			var backend, service, model, status string
+			var probability *float64
+			if err := pool.QueryRow(ctx, `SELECT sc.backend,sc.service,sc.model,sc.skip_probability,e.status FROM episode_screenings sc JOIN episodes e ON e.id=sc.episode_id WHERE e.id=$1`, id).Scan(&backend, &service, &model, &probability, &status); err != nil {
+				t.Fatal(err)
+			}
+			if mode == "fallback" {
+				if backend != "llm" || service != "llm.cheap" || probability != nil || calls != 2 {
+					t.Fatalf("fallback backend=%s service=%s probability=%v calls=%d", backend, service, probability, calls)
+				}
+			} else if backend != "jev" || service != "jev" || model != "jev-resolved" || probability == nil {
+				t.Fatalf("metadata %s %s %s %v", backend, service, model, probability)
+			}
+			if mode == "skip" && status != "skipped" || mode != "skip" && status != "content_ready" {
+				t.Fatalf("status=%s", status)
+			}
+			input := makeScreeningInput(cfg, cfg.Sources[0], []llmDocument{{Position: 0, Content: "substantive content"}})
+			cached, _, _, err := loadScreening(ctx, pool, id, input.Hash)
+			if err != nil || cached.Service != service || cached.Model != model {
+				t.Fatalf("cache=%+v err=%v", cached, err)
+			}
+			if err := database.Migrate(ctx, pool); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}

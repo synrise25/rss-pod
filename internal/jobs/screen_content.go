@@ -23,15 +23,21 @@ const screeningPrompt = `你是播客选题筛选员。判断提供的资料是�
 只返回 JSON，不生成播客脚本：{"decision":"allow或skip","reason":"简短的中文判断理由"}。不确定时 decision 必须为 allow，并说明不确定的原因。`
 
 type screeningResult struct {
-	Decision string `json:"decision"`
-	Reason   string `json:"reason"`
+	Backend         string   `json:"backend,omitempty"`
+	Service         string   `json:"service,omitempty"`
+	Model           string   `json:"model,omitempty"`
+	SkipProbability *float64 `json:"skip_probability,omitempty"`
+	Decision        string   `json:"decision"`
+	Reason          string   `json:"reason"`
 }
 
 type screeningInput struct {
-	Hash     string
-	System   string
-	User     string
-	Services []string
+	Chain           []string
+	JevInstructions string
+	SkipThreshold   float64
+	Hash            string
+	System          string
+	User            string
 }
 
 func makeScreeningInput(cfg *config.Config, source config.SourceConfig, documents []llmDocument) screeningInput {
@@ -47,52 +53,51 @@ func makeScreeningInput(cfg *config.Config, source config.SourceConfig, document
 	// Hash all source documents, even if the rendered prompt reaches its safety limit.
 	// Credentials/proxies do not affect editorial decisions and are not persisted.
 	type modelIdentity struct{ Name, Type, BaseURL, Model string }
-	models := make([]modelIdentity, 0, len(screening.LLM))
-	for _, name := range screening.LLM {
-		service := cfg.Services.LLM[name]
-		models = append(models, modelIdentity{name, service.Type, service.BaseURL, service.Model})
+	models := make([]modelIdentity, 0, len(screening.Services))
+	for _, ref := range screening.Services {
+		service := cfg.Services.LLM[strings.TrimPrefix(ref, "llm.")]
+		if ref == "jev" {
+			service = cfg.Services.Jev
+		}
+		models = append(models, modelIdentity{ref, service.Type, service.BaseURL, service.Model})
+	}
+	jevInstructions := strings.Split(screeningPrompt, "只返回 JSON")[0] + jevScreeningQuestion
+	if screening.Instructions != nil {
+		jevInstructions += "\n补充选题要求：\n" + *screening.Instructions
 	}
 	data, _ := json.Marshal(struct {
-		System    string
-		User      string
-		Documents []llmDocument
-		Models    []modelIdentity
-	}{system, user, documents, models})
-	return screeningInput{Hash: fmt.Sprintf("%x", sha256.Sum256(data)), System: system, User: user, Services: screening.LLM}
+		System      string
+		User        string
+		Documents   []llmDocument
+		Models      []modelIdentity
+		JevQuestion map[string]any
+		Threshold   float64
+	}{system, user, documents, models, jevQuestion(jevInstructions), screening.Jev.Threshold()})
+	return screeningInput{Hash: fmt.Sprintf("%x", sha256.Sum256(data)), System: system, User: user, Chain: screening.Services, JevInstructions: jevInstructions, SkipThreshold: screening.Jev.Threshold()}
 }
 
 func loadScreening(ctx context.Context, pool *pgxpool.Pool, episodeID, hash string) (screeningResult, string, string, error) {
 	var result screeningResult
 	var service, model string
-	err := pool.QueryRow(ctx, `SELECT decision, reason, llm_service, model FROM episode_screenings
-  WHERE episode_id=$1 AND input_hash=$2`, episodeID, hash).Scan(&result.Decision, &result.Reason, &service, &model)
+	err := pool.QueryRow(ctx, `SELECT decision, reason, llm_service, model, backend, service, skip_probability FROM episode_screenings
+  WHERE episode_id=$1 AND input_hash=$2`, episodeID, hash).Scan(&result.Decision, &result.Reason, &service, &model, &result.Backend, &result.Service, &result.SkipProbability)
+	result.Model = model
 	return result, service, model, err
 }
 
-func screenWithLLM(ctx context.Context, cfg *config.Config, input screeningInput) (screeningResult, string, error) {
-	var failures []string
-	for _, name := range input.Services {
-		service, ok := cfg.Services.LLM[name]
-		if !ok {
-			return screeningResult{}, "", permanent("screening references unknown LLM %q", name)
-		}
-		content, retryable, err := callLLMCompletion(ctx, service, input.System, input.User, 0)
-		if err != nil {
-			if !retryable {
-				return screeningResult{}, "", permanent("screening LLM %s: %v", name, err)
-			}
-			failures = append(failures, name+": "+err.Error())
-			continue
-		}
-		var result screeningResult
-		err = json.Unmarshal(extractJSONObject(content), &result)
-		if err == nil && (result.Decision == "allow" || result.Decision == "skip") && strings.TrimSpace(result.Reason) != "" {
-			result.Reason = strings.TrimSpace(result.Reason)
-			return result, name, nil
-		}
-		failures = append(failures, name+": invalid screening JSON (requires allow/skip and a nonempty reason)")
+func screenWithLLM(ctx context.Context, service config.LLMService, input screeningInput) (screeningResult, error) {
+	content, _, err := callLLMCompletion(ctx, service, input.System, input.User, 0)
+	if err != nil {
+		return screeningResult{}, fmt.Errorf("LLM request failed")
 	}
-	return screeningResult{}, "", fmt.Errorf("all screening LLM services failed: %s", strings.Join(failures, "; "))
+	var result struct {
+		Decision string `json:"decision"`
+		Reason   string `json:"reason"`
+	}
+	if err := json.Unmarshal(extractJSONObject(content), &result); err != nil || (result.Decision != "allow" && result.Decision != "skip") || strings.TrimSpace(result.Reason) == "" {
+		return screeningResult{}, fmt.Errorf("invalid screening JSON (requires allow/skip and a nonempty reason)")
+	}
+	return screeningResult{Decision: result.Decision, Reason: strings.TrimSpace(result.Reason)}, nil
 }
 
 type ScreenContentWorker struct {
@@ -133,8 +138,12 @@ func (w *ScreenContentWorker) screen(ctx context.Context, episodeID string, jobI
 		input = makeScreeningInput(w.Config, source, documents)
 		result, usedService, model, err = loadScreening(ctx, w.Pool, episodeID, input.Hash)
 		if errors.Is(err, pgx.ErrNoRows) {
-			result, usedService, err = screenWithLLM(ctx, w.Config, input)
-			model = w.Config.Services.LLM[usedService].Model
+			result, err = screenContent(ctx, w.Config, input)
+			usedService = strings.TrimPrefix(result.Service, "llm.")
+			if result.Backend == "jev" {
+				usedService = ""
+			}
+			model = result.Model
 		}
 		if err != nil {
 			return err
@@ -149,11 +158,11 @@ func (w *ScreenContentWorker) screen(ctx context.Context, episodeID string, jobI
 		return err
 	}
 	if enabled {
-		if _, err := tx.Exec(ctx, `INSERT INTO episode_screenings (episode_id, input_hash, decision, reason, llm_service, model)
-   VALUES ($1,$2,$3,$4,$5,$6)
+		if _, err := tx.Exec(ctx, `INSERT INTO episode_screenings (episode_id, input_hash, decision, reason, llm_service, model, backend, service, skip_probability)
+   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
    ON CONFLICT (episode_id) DO UPDATE SET input_hash=EXCLUDED.input_hash, decision=EXCLUDED.decision,
-    reason=EXCLUDED.reason, llm_service=EXCLUDED.llm_service, model=EXCLUDED.model, created_at=now()
-   WHERE episode_screenings.input_hash <> EXCLUDED.input_hash`, episodeID, input.Hash, result.Decision, result.Reason, usedService, model); err != nil {
+    reason=EXCLUDED.reason, llm_service=EXCLUDED.llm_service, model=EXCLUDED.model, backend=EXCLUDED.backend, service=EXCLUDED.service, skip_probability=EXCLUDED.skip_probability, created_at=now()
+   WHERE episode_screenings.input_hash <> EXCLUDED.input_hash`, episodeID, input.Hash, result.Decision, result.Reason, usedService, model, result.Backend, result.Service, result.SkipProbability); err != nil {
 			return fmt.Errorf("save screening: %w", err)
 		}
 	}
@@ -173,7 +182,7 @@ func (w *ScreenContentWorker) screen(ctx context.Context, episodeID string, jobI
 		return err
 	}
 	if enabled {
-		slog.InfoContext(ctx, "content screening completed", "episode_id", episodeID, "decision", result.Decision, "reason", result.Reason, "llm_service", usedService)
+		slog.InfoContext(ctx, "content screening completed", "episode_id", episodeID, "decision", result.Decision, "reason", result.Reason, "service", result.Service)
 	}
 	return nil
 }

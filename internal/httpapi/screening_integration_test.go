@@ -42,6 +42,21 @@ func TestScreeningManagementVisibilityIntegration(t *testing.T) {
 	if rr.Code != 200 || !strings.Contains(rr.Body.String(), "回复主要为领取码") {
 		t.Fatalf("admin: %d %s", rr.Code, rr.Body.String())
 	}
+
+	// Jev metadata is available to management without masquerading as an LLM.
+	if _, err := pool.Exec(ctx, `UPDATE episode_screenings SET backend='jev',service='jev',llm_service='',model='jev-test',skip_probability=0.9 WHERE episode_id=$1`, id); err != nil {
+		t.Fatal(err)
+	}
+	rr = httptest.NewRecorder()
+	admin.listSkipped(rr, httptest.NewRequest("GET", "/api/v1/admin/skipped", nil))
+	if rr.Code != 200 || !strings.Contains(rr.Body.String(), `"service":"jev"`) || !strings.Contains(rr.Body.String(), `"skip_probability":0.9`) {
+		t.Fatalf("Jev admin metadata: %d %s", rr.Code, rr.Body.String())
+	}
+	rr = httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest("GET", "/api/v1/episodes/"+id, nil))
+	if rr.Code != 200 || !strings.Contains(rr.Body.String(), `"backend": "jev"`) && !strings.Contains(rr.Body.String(), `"backend":"jev"`) {
+		t.Fatalf("Jev detail metadata: %d %s", rr.Code, rr.Body.String())
+	}
 	// The public player must never expose screening reasons or skipped content.
 	player := newPlayerServer(&config.Config{}, pool)
 	rr = httptest.NewRecorder()

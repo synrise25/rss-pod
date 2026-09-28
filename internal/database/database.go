@@ -142,6 +142,11 @@ CREATE TABLE IF NOT EXISTS episode_screenings (
  created_at timestamptz NOT NULL DEFAULT now()
 );
 
+ALTER TABLE episode_screenings ADD COLUMN IF NOT EXISTS backend text NOT NULL DEFAULT 'llm';
+ALTER TABLE episode_screenings ADD COLUMN IF NOT EXISTS service text NOT NULL DEFAULT '';
+ALTER TABLE episode_screenings ADD COLUMN IF NOT EXISTS skip_probability double precision CHECK (skip_probability >= 0 AND skip_probability <= 1);
+UPDATE episode_screenings SET service='llm.' || llm_service WHERE service='' AND llm_service<>'';
+
 CREATE INDEX IF NOT EXISTS episodes_source_created_idx
     ON episodes (source_id, created_at DESC);
 
