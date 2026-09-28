@@ -227,7 +227,8 @@ func (s *Server) listEpisodes(w http.ResponseWriter, r *http.Request) {
 		SELECT id, source_id, feed_item_id, title, status, llm_service,
 		       audio_url, audio_byte_size, audio_duration_seconds, error, created_at, updated_at, published_at,
          COALESCE((SELECT jsonb_build_object('decision', sc.decision, 'reason', sc.reason,
-          'llm_service', sc.llm_service, 'model', sc.model, 'created_at', sc.created_at)
+          'llm_service', sc.llm_service, 'model', sc.model, 'created_at', sc.created_at,
+          'backend', sc.backend, 'service', sc.service, 'skip_probability', sc.skip_probability)
           FROM episode_screenings sc WHERE sc.episode_id=episodes.id), 'null'::jsonb)
 		FROM episodes
 		WHERE ($1 = '' OR source_id = $1)
@@ -269,7 +270,8 @@ func (s *Server) getEpisode(w http.ResponseWriter, r *http.Request) {
 		SELECT id, source_id, feed_item_id, title, status, llm_service,
 		       audio_url, audio_byte_size, audio_duration_seconds, error, created_at, updated_at, published_at,
          COALESCE((SELECT jsonb_build_object('decision', sc.decision, 'reason', sc.reason,
-          'llm_service', sc.llm_service, 'model', sc.model, 'created_at', sc.created_at)
+          'llm_service', sc.llm_service, 'model', sc.model, 'created_at', sc.created_at,
+          'backend', sc.backend, 'service', sc.service, 'skip_probability', sc.skip_probability)
           FROM episode_screenings sc WHERE sc.episode_id=episodes.id), 'null'::jsonb)
 		FROM episodes WHERE id = $1
 	`, id).Scan(&value.ID, &value.SourceID, &value.FeedItemID, &value.Title, &value.Status,

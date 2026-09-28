@@ -1225,7 +1225,7 @@ async function loadAdminSkipped() {
       const reason = document.createElement("p");
       reason.textContent = episode.reason;
       const meta = document.createElement("small");
-      meta.textContent = `${episode.source_id} · ${new Date(episode.created_at).toLocaleString(localeKey)} · ${episode.llm_service} / ${episode.model}`;
+      meta.textContent = `${episode.source_id} · ${new Date(episode.created_at).toLocaleString(localeKey)} · ${episode.service || episode.llm_service} / ${episode.model}`;
       item.append(title, reason, meta);
       return item;
     });

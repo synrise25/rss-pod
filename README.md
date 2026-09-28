@@ -336,60 +336,82 @@ prompt limit, with a warning log that excludes content and URLs.
 
 ### Optional content screening
 
-Configure screening services under `defaults.screening`, then override individual
-fields in a source's `screening` block:
+Screening runs between content resolution and script generation and is disabled
+by default. Its independent `screen_content` River job shares the existing
+`runtime.jobs.queues.llm.concurrency` with script generation. It does not inherit
+the script-generation model list.
 
 ```yaml
+services:
+  jev:
+    base_url: https://api.typesafe.ai/v1 # Excludes /systemone
+    api_key: env://JEV_API_KEY
+    model: jev-1.13.0
+    timeout: 30s
+    proxy: ""
+  # Keep the existing services.llm configuration
+
 defaults:
   screening:
     enabled: false
-    llm: [deepseek]  # Reference a low-cost model configured under services.llm
+    services: [jev, llm.deepseek]
     instructions: ""
+    jev:
+      skip_threshold: 0.7
 
 sources:
   - id: v2ex-hot
-    # Keep the remaining source configuration
+    # Keep the remaining source fields; enable when ready
     screening:
-      enabled: true
-      instructions: >-
-        Skip content primarily promoting products, giveaways, or activation codes
-        when it lacks substantive discussion. Keep concrete technical insights
-        and useful discussions.
+      enabled: false
 ```
 
-Screening is disabled by default and adds no LLM calls while disabled. When
-enabled, an independent `screen_content` River job runs after content is saved
-and before script generation, sharing `runtime.jobs.queues.llm.concurrency`
-with script jobs in the existing `llm` queue. No separate `screen` queue is needed. Configure
-`screening.llm` explicitly: it has its own ordered fallback list and never
-inherits the script-generation `llm` list. Omitted source fields inherit defaults;
-explicit `enabled: false` overrides a global enablement, `llm` replaces the whole
-list, and `instructions: ""` clears inherited additional instructions.
+`services` is an ordered chain: `jev` references `services.jev`, and
+`llm.<name>` references `services.llm`. A valid `allow` or `skip` ends screening.
+Timeouts, oversized inputs, rate limits, authentication failures, other provider
+errors, and invalid responses try the next service. If all services fail, the
+job retries and eventually becomes `failed`. Cancellation stops the chain.
+Errors never become an editorial decision.
 
-The built-in policy skips only content clearly lacking substance, such as pure
-promotions, giveaways, or repetitive participation replies. It preserves useful
-information, experiences, and discussions, including uncertain cases. Custom
-instructions are appended to that policy. Screening uses the same source material
-as script generation without extra reply sampling, retaining the existing
-120,000-character input limit and truncation warning. This is an application
-character limit, not a model token limit; choose a model that supports your input.
+Omitted source fields inherit defaults. `services` replaces the entire list,
+`enabled: false` disables screening, `instructions: ""` clears extra rules, and
+`jev.skip_threshold` can be overridden per source. To use only an LLM for one
+source, set `services: [llm.gemini]`.
 
-Decisions (`allow` or `skip`), reasons, service names, and model names are stored
-in PostgreSQL. Retries reuse decisions for unchanged content, policy, and model
-configuration; resuming an incomplete episode re-evaluates changed inputs.
-`skipped` is a normal terminal state: no script or audio is generated, and later
-polls or ordinary failure retries do not enqueue it again. Timeouts, rate limits,
-server errors, and invalid JSON trigger fallback or retries, ending in `failed`
-when attempts are exhausted. Non-retryable configuration or authentication
-errors fail immediately. Recovery checks screening instead of bypassing it.
+**Configuration upgrade:** `screening.llm` has been removed. Replace
+`llm: [deepseek]` with `services: [llm.deepseek]` and change the top-level
+`version` to `7`. The removed field is rejected instead of silently ignored.
 
-After signing in at `/admin`, expand **Recently skipped** to see up to 100 recent
-results and their reasons. The loopback management API's episode list and detail
-responses also include `screening`; use `GET /api/v1/episodes?status=skipped` to
-filter the list. The public player and podcast RSS show only published episodes.
-Run the existing `migrate` command before starting the upgraded application to
-add the screening table and statuses. Existing configuration remains valid and
-the configuration version stays at 6.
+`instructions` applies to both backends: as LLM system instructions or Jev
+question instructions. Jev's Noul answer supplies a skip probability; values at
+or above `skip_threshold` skip the episode, and lower values allow it. The default
+is 0.7, with a valid range of `(0, 1]`. Set it in YAML, not an environment variable.
+The generated reason includes the probability and threshold; it is a template,
+not a model-written explanation. Jev evaluates overall discussion value: a few
+technical comments do not automatically preserve a thread dominated by referral
+codes and promotion.
+
+Both backends receive the same source documents as script generation, with no
+extra reply sampling and the existing 120,000-character application limit.
+Characters are not tokens. Jev's `max_tokens_exceeded` error falls through to the
+next service without further truncating the replies. Configure a fallback LLM
+that can handle the input size.
+
+Stored results include `decision`, `reason`, `backend`, `service`, actual model
+version, and optional `skip_probability`. The existing `llm_service` response
+field remains populated for LLM results and is empty for Jev. Cached decisions
+include content, policy, service order, models, and threshold; rotating credentials
+does not invalidate them. Pin model versions: upstream changes behind a floating
+alias such as `jev-latest` do not automatically invalidate stored decisions.
+`skipped` is terminal and produces no script or audio; ordinary retries do not
+re-enqueue skipped episodes.
+
+After signing in at `/admin`, expand **Recently skipped** to inspect results.
+Loopback management episode list/detail responses include `screening` as well.
+Public player and podcast feeds show only published episodes. Before starting
+the new version, run `migrate` to add screening metadata columns and update the
+configuration to version 7 as described above.
+
 
 ## Security model
 

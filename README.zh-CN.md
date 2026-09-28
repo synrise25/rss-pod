@@ -289,45 +289,65 @@ content:
 
 ### 可选内容筛选
 
-在 `defaults.screening` 中配置筛选服务，在 source 的 `screening` 下按字段覆盖：
+筛选位于内容保存和脚本生成之间，默认关闭。使用独立的 `screen_content` River 任务，
+与脚本生成共享 `runtime.jobs.queues.llm.concurrency`。筛选不继承脚本生成的模型列表。
 
 ```yaml
+services:
+  jev:
+    base_url: https://api.typesafe.ai/v1 # 不含 /systemone
+    api_key: env://JEV_API_KEY
+    model: jev-1.13.0
+    timeout: 30s
+    proxy: ""
+  # services.llm 保持原有配置
+
 defaults:
   screening:
     enabled: false
-    llm: [deepseek]  # 引用 services.llm 中自行配置的低成本模型
+    services: [jev, llm.deepseek]
     instructions: ""
+    jev:
+      skip_threshold: 0.7
 
 sources:
   - id: v2ex-hot
-    # 其余 source 配置保持原样
+    # 其余 source 配置保持原样；准备启用时改为 true
     screening:
-      enabled: true
-      instructions: >-
-        跳过以推广、抽奖、赠码为主要目的且缺少实质讨论的内容。
-        有具体技术分享或有价值讨论时应保留。
+      enabled: false
 ```
 
-筛选默认关闭，不增加 LLM 调用。开启后，在内容保存与脚本生成之间执行独立的
-`screen_content` River 任务，使用现有 `llm` 队列，与脚本生成共享 `runtime.jobs.queues.llm.concurrency`，无需新增 `screen` 队列。`screening.llm` 必须显式配置，
-不会继承用于脚本生成的 `llm`；列表按顺序回退。source 未填写的字段继承 defaults，
-显式 `enabled: false` 可以覆盖全局开启；`llm` 整体替换，`instructions: ""` 清除继承的补充要求。
+`services` 是有序筛选链：`jev` 引用 `services.jev`，`llm.<名称>` 引用
+`services.llm`。有效的 `allow` 或 `skip` 立即结束筛选；超时、超限、限流、鉴权错误、
+其他服务错误及无效响应会记录失败并尝试下一项。全部失败则交给任务重试，耗尽后进入
+`failed`；任务取消不会再调用下一项。错误不会被当作“保留”或“跳过”。
 
-内置规则只跳过明显缺少实质内容的推广、抽奖、刷楼等资料；有信息、经验或讨论则保留，
-拿不准也保留。补充要求会追加到内置规则。筛选和脚本生成使用相同的资料，不额外抽样回复，
-沿用 120,000 字符的应用层输入上限；超过时记录截断日志。该上限不是模型 token 上限，
-请选择能容纳实际输入的模型。
+source 未填写的字段继承 defaults；`services` 整体替换，`enabled: false` 可以关闭，
+`instructions: ""` 清除补充要求，`jev.skip_threshold` 可按来源覆盖。
+例如某来源只用 LLM，可以设置 `services: [llm.gemini]`。
+旧的 `screening.llm` 已移除。升级时将 `llm: [deepseek]` 改为
+`services: [llm.deepseek]`，并将顶层 `version` 改为 `7`。旧字段会明确报错，不会静默忽略。
 
-结果包含 `allow` / `skip`、原因、服务名和模型名，并保存在数据库中。
-同一内容、规则及模型配置的结果在重试时复用；未完成任务恢复时，若内容或相关配置变化则重新判断。
-`skipped` 是正常终态，不生成脚本或音频，也不会被后续轮询或普通失败重试重新入队。
-判断接口超时、限流、服务端错误或返回无效 JSON 时会回退或重试，耗尽后进入 `failed`；
-配置、鉴权等不可重试错误直接失败。恢复失败任务时会检查筛选，不会绕过它。
+`instructions` 对两种后端均有效：LLM 使用系统提示词，Jev 使用问题的 `instructions`。
+Jev 使用 Noul 返回跳过概率，概率达到 `skip_threshold` 才跳过，否则保留；阈值默认 0.7，
+有效范围为 `(0, 1]`，放在 YAML 配置中而非环境变量中。理由包含概率和阈值，例如
+“Jev 判定跳过：跳过概率 89.0%，阈值 70.0%。”这不是模型生成的解释。
+Jev 按整体讨论价值判断；推广和邀请码占主体时，少量零散技术内容不足以自动保留。
 
-管理员登录 `/admin` 后可展开“最近跳过的内容”查看最近 100 条结果及原因；
-回环管理 API 的节目列表和详情也包含 `screening` 字段，可用
-`GET /api/v1/episodes?status=skipped` 查询。公共播放器和 Podcast RSS 只展示已发布节目。
-新增筛选表和状态需要先执行现有 `migrate` 命令；旧配置无需修改，配置版本仍为 6。
+筛选和脚本生成使用相同的正文及回复，不额外抽样，沿用 120,000 字符的应用层上限。
+字符上限不等于模型 token 上限。Jev 返回 `max_tokens_exceeded` 时会转下一服务，
+不会为了适配 Jev 而额外截取部分回复。请配置能容纳实际输入的 LLM 作为兜底。
+
+结果保存 `decision`、`reason`、`backend`、`service`、实际模型版本及可选的
+`skip_probability`。旧 `llm_service` 字段为 LLM 保留，Jev 结果中为空。
+缓存包含内容、规则、服务顺序、模型和阈值；凭据轮换不影响缓存。建议固定模型版本，
+使用 `jev-latest` 等浮动别名时，上游更新不会自动使已有缓存失效。
+`skipped` 是正常终态，不生成脚本或音频，也不会被普通重试重新入队。
+
+管理员可在 `/admin` 的“最近跳过的内容”查看结果；回环管理 API 的节目列表和详情
+也包含 `screening`。公共播放器和 Podcast RSS 只展示已发布节目。
+升级后先运行 `migrate` 添加筛选元数据列，再启动新版本。配置版本为 7；必须按上述说明更新配置。
+
 
 ## 安全边界
 

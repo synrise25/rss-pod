@@ -288,7 +288,7 @@ func (s *adminServer) setVisibility(w http.ResponseWriter, r *http.Request) {
 
 // listSkipped exposes editorial decisions only, never service connection settings.
 func (s *adminServer) listSkipped(w http.ResponseWriter, r *http.Request) {
-	rows, err := s.pool.Query(r.Context(), `SELECT e.id, e.source_id, e.title, sc.reason, sc.llm_service, sc.model, sc.created_at
+	rows, err := s.pool.Query(r.Context(), `SELECT e.id, e.source_id, e.title, sc.reason, sc.llm_service, sc.model, sc.created_at, sc.backend, sc.service, sc.skip_probability
   FROM episodes e JOIN episode_screenings sc ON sc.episode_id=e.id
   WHERE e.status='skipped' ORDER BY sc.created_at DESC, e.id LIMIT 100`)
 	if err != nil {
@@ -297,18 +297,21 @@ func (s *adminServer) listSkipped(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 	type skippedEpisode struct {
-		ID         string    `json:"id"`
-		SourceID   string    `json:"source_id"`
-		Title      string    `json:"title"`
-		Reason     string    `json:"reason"`
-		LLMService string    `json:"llm_service"`
-		Model      string    `json:"model"`
-		CreatedAt  time.Time `json:"created_at"`
+		Backend         string    `json:"backend"`
+		Service         string    `json:"service"`
+		SkipProbability *float64  `json:"skip_probability,omitempty"`
+		ID              string    `json:"id"`
+		SourceID        string    `json:"source_id"`
+		Title           string    `json:"title"`
+		Reason          string    `json:"reason"`
+		LLMService      string    `json:"llm_service"`
+		Model           string    `json:"model"`
+		CreatedAt       time.Time `json:"created_at"`
 	}
 	items := make([]skippedEpisode, 0)
 	for rows.Next() {
 		var item skippedEpisode
-		if err := rows.Scan(&item.ID, &item.SourceID, &item.Title, &item.Reason, &item.LLMService, &item.Model, &item.CreatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.SourceID, &item.Title, &item.Reason, &item.LLMService, &item.Model, &item.CreatedAt, &item.Backend, &item.Service, &item.SkipProbability); err != nil {
 			s.unavailable(w, err)
 			return
 		}

@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"net/url"
 	"os"
@@ -16,7 +17,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const CurrentVersion = 6
+const CurrentVersion = 7
 
 const (
 	EdgeTTSServiceName  = "edge"
@@ -140,6 +141,7 @@ func optionalDuration(value string, fallback time.Duration) (time.Duration, erro
 }
 
 type ServicesConfig struct {
+	Jev     LLMService            `yaml:"jev"`
 	Content ContentServices       `yaml:"content"`
 	LLM     map[string]LLMService `yaml:"llm"`
 	TTS     map[string]TTSService `yaml:"tts"`
@@ -222,10 +224,33 @@ type DialogueProfile struct {
 	Speakers []SpeakerConfig `yaml:"speakers" json:"speakers"`
 }
 
+type ScreeningJevConfig struct {
+	SkipThreshold *float64 `yaml:"skip_threshold" json:"skip_threshold,omitempty"`
+}
+
+func (c ScreeningJevConfig) Threshold() float64 {
+	if c.SkipThreshold != nil {
+		return *c.SkipThreshold
+	}
+	return 0.7
+}
+
 type ScreeningConfig struct {
-	Enabled      *bool    `yaml:"enabled" json:"enabled,omitempty"`
-	LLM          []string `yaml:"llm" json:"llm,omitempty"`
-	Instructions *string  `yaml:"instructions" json:"instructions,omitempty"`
+	Services     []string           `yaml:"services" json:"services,omitempty"`
+	Jev          ScreeningJevConfig `yaml:"jev" json:"jev"`
+	Enabled      *bool              `yaml:"enabled" json:"enabled,omitempty"`
+	Instructions *string            `yaml:"instructions" json:"instructions,omitempty"`
+}
+
+// Reject obsolete screening keys rather than silently inheriting another service chain.
+func (c *ScreeningConfig) UnmarshalYAML(node *yaml.Node) error {
+	type plain ScreeningConfig
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Value == "llm" {
+			return fmt.Errorf("screening.llm is no longer supported; use screening.services with llm.<name> references")
+		}
+	}
+	return node.Decode((*plain)(c))
 }
 
 func (c ScreeningConfig) IsEnabled() bool { return c.Enabled != nil && *c.Enabled }
@@ -943,8 +968,11 @@ func (c *Config) EffectiveScreening(source SourceConfig) ScreeningConfig {
 		if source.Screening.Enabled != nil {
 			result.Enabled = source.Screening.Enabled
 		}
-		if source.Screening.LLM != nil {
-			result.LLM = source.Screening.LLM
+		if source.Screening.Services != nil {
+			result.Services = source.Screening.Services
+		}
+		if source.Screening.Jev.SkipThreshold != nil {
+			result.Jev = source.Screening.Jev
 		}
 		if source.Screening.Instructions != nil {
 			result.Instructions = source.Screening.Instructions
@@ -957,20 +985,50 @@ func (c *Config) validateScreening(field string, screening ScreeningConfig) erro
 	if !screening.IsEnabled() {
 		return nil
 	}
-	if err := validateServiceReferences(field+".llm", screening.LLM, c.Services.LLM); err != nil {
-		return err
+	threshold := screening.Jev.Threshold()
+	if math.IsNaN(threshold) || math.IsInf(threshold, 0) || threshold <= 0 || threshold > 1 {
+		return fmt.Errorf("%s.jev.skip_threshold must be in (0, 1]", field)
 	}
-	for _, name := range screening.LLM {
-		service := c.Services.LLM[name]
-		if service.Type != "openai_compatible" || strings.TrimSpace(service.Model) == "" {
-			return fmt.Errorf("%s: service %s requires openai_compatible type and a model", field, name)
+	refs := screening.Services
+	if len(refs) == 0 {
+		return fmt.Errorf("%s requires at least one service", field)
+	}
+	seen := map[string]bool{}
+	for _, ref := range refs {
+		if seen[ref] {
+			return fmt.Errorf("%s: duplicate service %q", field, ref)
 		}
-		if err := validateURL(field+" service "+name+" base_url", service.BaseURL); err != nil {
+		seen[ref] = true
+		var service LLMService
+		switch {
+		case ref == "jev":
+			service = c.Services.Jev
+		case strings.HasPrefix(ref, "llm."):
+			name := strings.TrimPrefix(ref, "llm.")
+			var ok bool
+			service, ok = c.Services.LLM[name]
+			if !ok {
+				return fmt.Errorf("%s: unknown service %q", field, ref)
+			}
+			if service.Type != "openai_compatible" {
+				return fmt.Errorf("%s: service %s requires openai_compatible type", field, ref)
+			}
+		default:
+			return fmt.Errorf("%s: unknown service %q; use jev or llm.<name>", field, ref)
+		}
+		if strings.TrimSpace(service.Model) == "" {
+			return fmt.Errorf("%s: service %s requires a model", field, ref)
+		}
+		if err := validateURL(field+" service "+ref+" base_url", service.BaseURL); err != nil {
 			return err
 		}
 		if d, err := time.ParseDuration(service.Timeout); err != nil || d <= 0 {
-			return fmt.Errorf("%s: service %s timeout must be a positive duration", field, name)
+			return fmt.Errorf("%s: service %s timeout must be a positive duration", field, ref)
+		}
+		if err := validateOptionalProxy(field+" service "+ref+" proxy", service.Proxy); err != nil {
+			return err
 		}
 	}
+
 	return nil
 }

@@ -1,6 +1,6 @@
 # Configuration format version; increment for incompatible changes.
 # 配置格式版本；发生不兼容变更时递增。
-version: 6
+version: 7
 
 runtime:
   http:
@@ -113,6 +113,25 @@ services:
       proxy: ""
       timeout: 5m
 
+  # Optional decision model used only when screening selects jev.
+  # 仅在筛选链选择 jev 时使用的可选决策模型。
+  jev:
+    # API base URL, excluding /systemone.
+    # API 基础地址，不含 /systemone。
+    base_url: https://api.typesafe.ai/v1
+    # Set a key locally before enabling Jev screening.
+    # 启用 Jev 筛选前在本地填写密钥。
+    api_key: ""
+    # Pin a version so cached decisions remain reproducible.
+    # 固定版本，避免模型别名更新后复用旧判断。
+    model: jev-1.13.0
+    # Optional HTTP proxy; empty uses the default transport.
+    # 可选 HTTP 代理；留空使用默认传输。
+    proxy: ""
+    # Maximum duration of one request.
+    # 单次请求的最长时间。
+    timeout: 30s
+
   tts:
     edge:
       proxy: env://EDGE_TTS_PROXY
@@ -215,9 +234,15 @@ defaults:
     # Defaults to false; sources can explicitly override true or false.
     # 默认关闭；source 可以显式覆盖为 true 或 false。
     enabled: false
-    # Independent services.llm references and fallback order; never inherits the script-generation list.
-    # 独立引用 services.llm 并按顺序回退；不会继承脚本生成的模型列表。
-    llm: [deepseek]
+    # Ordered screening chain; use [jev, llm.deepseek] to try Jev first.
+    # 有序筛选链；使用 [jev, llm.deepseek] 可优先尝试 Jev。
+    # Failures fall through; a valid decision ends the chain. Independent of script generation.
+    # 调用失败尝试下一项，有效判断立即结束；独立于脚本生成配置。
+    services: [llm.deepseek]
+    jev:
+      # Skip when the yes-probability reaches this threshold; otherwise allow. Default: 0.7.
+      # 跳过概率达到阈值才跳过，否则保留；默认 0.7。
+      skip_threshold: 0.7
     # Additional instructions appended to the built-in conservative screening policy.
     # 追加到内置保守筛选规则后的补充要求。
     instructions: ""
@@ -291,8 +316,8 @@ sources:
       target_duration: 3m
       dialogue_profile: v2ex-commentary
 
-    # Screening fields inherit defaults individually; llm replaces the list, instructions replaces the text.
-    # screening 按字段继承 defaults；llm 整体替换列表，instructions 整体替换补充要求。
+    # Screening fields inherit defaults individually; services replaces the list, instructions replaces the text.
+    # screening 按字段继承 defaults；services 整体替换列表，instructions 整体替换补充要求。
     # Set enabled to true to screen this source; empty instructions clears inherited additions.
     # 将 enabled 设为 true 可筛选此源；空 instructions 可清除继承的补充要求。
     screening:

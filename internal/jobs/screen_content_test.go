@@ -3,7 +3,6 @@ package jobs
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,7 +15,7 @@ func screeningTestConfig(endpoint string) *config.Config {
 	enabled := true
 	return &config.Config{
 		Services: config.ServicesConfig{LLM: map[string]config.LLMService{"cheap": {Type: "openai_compatible", BaseURL: endpoint, Model: "test-model", Timeout: "1s"}}},
-		Defaults: config.DefaultsConfig{Screening: config.ScreeningConfig{Enabled: &enabled, LLM: []string{"cheap"}}},
+		Defaults: config.DefaultsConfig{Screening: config.ScreeningConfig{Enabled: &enabled, Services: []string{"llm.cheap"}}},
 		Sources:  []config.SourceConfig{{ID: "test", Name: "Test"}},
 	}
 }
@@ -65,7 +64,6 @@ func TestScreeningLLMFallbackAndInvalidResponses(t *testing.T) {
 		name, content string
 		status        int
 		want          string
-		permanent     bool
 	}{
 		{name: "allow", content: `{"decision":"allow","reason":"存在实质讨论"}`, want: "cheap"},
 		{name: "skip", content: "```json\n{\"decision\":\"skip\",\"reason\":\"主要为发码刷楼\"}\n```", want: "cheap"},
@@ -75,7 +73,7 @@ func TestScreeningLLMFallbackAndInvalidResponses(t *testing.T) {
 		{name: "empty reason", content: `{"decision":"skip","reason":" "}`, want: "backup"},
 		{name: "rate limit", status: 429, want: "backup"},
 		{name: "server failure", status: 500, want: "backup"},
-		{name: "auth failure", status: 401, permanent: true},
+		{name: "auth failure", status: 401, want: "backup"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -104,15 +102,9 @@ func TestScreeningLLMFallbackAndInvalidResponses(t *testing.T) {
 			defer backup.Close()
 			cfg := screeningTestConfig(first.URL)
 			cfg.Services.LLM["backup"] = config.LLMService{BaseURL: backup.URL, Timeout: "1s"}
-			cfg.Defaults.Screening.LLM = append(cfg.Defaults.Screening.LLM, "backup")
-			_, service, err := screenWithLLM(context.Background(), cfg, makeScreeningInput(cfg, cfg.Sources[0], nil))
-			if tc.permanent {
-				var pe *permanentError
-				if !errors.As(err, &pe) || backupCalls != 0 {
-					t.Fatalf("error=%v backup calls=%d", err, backupCalls)
-				}
-				return
-			}
+			cfg.Defaults.Screening.Services = append(cfg.Defaults.Screening.Services, "llm.backup")
+			result, err := screenContent(context.Background(), cfg, makeScreeningInput(cfg, cfg.Sources[0], nil))
+			service := strings.TrimPrefix(result.Service, "llm.")
 			if err != nil || service != tc.want {
 				t.Fatalf("service=%s err=%v", service, err)
 			}
@@ -124,7 +116,7 @@ func TestScreeningAllInvalidDoesNotAllow(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { writeScreeningCompletion(w, `{"decision":"allow"}`) }))
 	defer server.Close()
 	cfg := screeningTestConfig(server.URL)
-	result, _, err := screenWithLLM(context.Background(), cfg, makeScreeningInput(cfg, cfg.Sources[0], nil))
+	result, err := screenContent(context.Background(), cfg, makeScreeningInput(cfg, cfg.Sources[0], nil))
 	if err == nil || result.Decision == "allow" {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
