@@ -295,9 +295,9 @@ content:
 ```yaml
 services:
   jev:
-    base_url: https://api.typesafe.ai/v1 # 不含 /systemone
+    base_url: env://JEV_BASE_URL # 不含 /systemone
     api_key: env://JEV_API_KEY
-    model: jev-1.13.0
+    model: env://JEV_MODEL
     timeout: 30s
     proxy: ""
   # services.llm 保持原有配置
@@ -316,6 +316,9 @@ sources:
     screening:
       enabled: false
 ```
+
+从 `.env.example` 补充 `JEV_BASE_URL`、`JEV_API_KEY` 和 `JEV_MODEL` 到本地 `.env`；
+示例密钥默认留空。`timeout` 直接在 YAML 中配置，不使用 `JEV_TIMEOUT` 环境变量。
 
 `services` 是有序筛选链：`jev` 引用 `services.jev`，`llm.<名称>` 引用
 `services.llm`。有效的 `allow` 或 `skip` 立即结束筛选；超时、超限、限流、鉴权错误、
