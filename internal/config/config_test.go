@@ -6,7 +6,74 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/joho/godotenv"
 )
+
+func TestLoadExampleWithOnlyRSSAndEdgeEnabled(t *testing.T) {
+	environment, err := godotenv.Read(filepath.Join("..", "..", ".env.example"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, value := range environment {
+		t.Setenv(name, value)
+	}
+	t.Setenv("AZURE_SPEECH_KEY", "")
+	t.Setenv("AZURE_SPEECH_REGION", "")
+	data, err := os.ReadFile(filepath.Join("..", "..", "config.example.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(strings.Replace(string(data), "enabled: false\n    feed:", "enabled: true\n    feed:", 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("unused Crawl4AI and Azure credentials should not prevent startup: %v", err)
+	}
+	if !cfg.Sources[0].Enabled || cfg.Sources[1].Enabled {
+		t.Fatal("expected only the first RSS source to be enabled")
+	}
+	cfg.Sources[1].Enabled = true
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "azure api_key") {
+		t.Fatalf("enabled Azure profile must require credentials: %v", err)
+	}
+	azure := cfg.Services.TTS[AzureTTSServiceName]
+	azure.APIKey, azure.Region = "test-key", "southeastasia"
+	cfg.Services.TTS[AzureTTSServiceName] = azure
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "crawl4ai.base_url") {
+		t.Fatalf("enabled Crawl4AI source must require an endpoint: %v", err)
+	}
+	cfg.Services.Content.Crawl4AI.BaseURL = "https://crawl4ai.example.com"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("configured enabled source rejected: %v", err)
+	}
+}
+
+func TestScreeningValidationOnlyUsesEnabledSources(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		data      string
+		wantError bool
+	}{
+		{name: "disabled source", data: strings.Replace(minimalConfig, "enabled: true", "enabled: false", 1)},
+		{name: "source disables inherited screening", data: strings.Replace(minimalConfig, "  - id: test\n", "  - id: test\n    screening: {enabled: false}\n", 1)},
+		{name: "enabled source inherits invalid screening", data: minimalConfig, wantError: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data := strings.Replace(tc.data, "defaults:\n", "defaults:\n  screening: {enabled: true, services: [jev]}\n", 1)
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := Load(path)
+			if tc.wantError && (err == nil || !strings.Contains(err.Error(), "jev requires a model")) || !tc.wantError && err != nil {
+				t.Fatalf("Load() error = %v, want error: %v", err, tc.wantError)
+			}
+		})
+	}
+}
 
 func TestLoadCurrentConfig(t *testing.T) {
 	t.Setenv("DATABASE_HOST", "127.0.0.1")

@@ -5,10 +5,194 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/synrise25/rss-pod/internal/config"
 )
+
+func TestOptionalChecksIgnoreDisabledAndOverriddenContent(t *testing.T) {
+	for _, kind := range []string{"jina", "crawl4ai"} {
+		t.Run(kind, func(t *testing.T) {
+			check := checkJina
+			if kind == "crawl4ai" {
+				check = checkCrawl4AI
+			}
+			cfg := &config.Config{
+				Defaults: config.DefaultsConfig{Content: config.ContentConfig{Type: kind}},
+				Sources: []config.SourceConfig{
+					{Enabled: true, Content: &config.ContentConfig{Type: "rss-item"}},
+					{Enabled: false, Content: &config.ContentConfig{Type: kind}},
+				},
+			}
+			detail, err := check(context.Background(), cfg)
+			if err != nil || detail != "not used" {
+				t.Fatalf("unused content check = %q, %v", detail, err)
+			}
+			cfg.Sources = nil
+			detail, err = check(context.Background(), cfg)
+			if err != nil || detail != "not used" {
+				t.Fatalf("no enabled sources = %q, %v", detail, err)
+			}
+		})
+	}
+}
+
+func TestCheckLLMOnlyUsesEnabledSourceDependencies(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		generation []string
+		screening  *config.ScreeningConfig
+		sources    bool
+		want       []string
+	}{
+		{name: "inherited generation and fallback", sources: true, want: []string{"fallback", "primary"}},
+		{name: "source overrides defaults", sources: true, generation: []string{"override"}, want: []string{"override"}},
+		{name: "screening fallback is checked", sources: true, screening: &config.ScreeningConfig{Enabled: boolPointer(true), Services: []string{"jev", "llm.screen"}}, want: []string{"fallback", "primary", "screen"}},
+		{name: "disabled screening is ignored", sources: true, screening: &config.ScreeningConfig{Enabled: boolPointer(false), Services: []string{"llm.unused"}}, want: []string{"fallback", "primary"}},
+		{name: "no enabled sources"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var called []string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				name := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/"), "/models")
+				called = append(called, name)
+				if r.Method != http.MethodGet || r.Header.Get("Authorization") != "Bearer test-key" {
+					t.Errorf("request = %s %s, Authorization = %q", r.Method, r.URL.Path, r.Header.Get("Authorization"))
+				}
+				_, _ = w.Write([]byte(`{"data":[{"id":"test-model"}]}`))
+			}))
+			defer server.Close()
+			cfg := &config.Config{
+				Defaults: config.DefaultsConfig{LLM: []string{"primary", "fallback"}},
+				Services: config.ServicesConfig{LLM: map[string]config.LLMService{}},
+				Sources: []config.SourceConfig{
+					{Enabled: tc.sources, LLM: tc.generation, Screening: tc.screening},
+					{Enabled: false, LLM: []string{"unused"}, Screening: &config.ScreeningConfig{Enabled: boolPointer(true), Services: []string{"llm.unused"}}},
+				},
+			}
+			for _, name := range []string{"primary", "fallback", "override", "screen", "unused"} {
+				cfg.Services.LLM[name] = config.LLMService{BaseURL: server.URL + "/" + name, APIKey: "test-key", Model: "test-model", Timeout: "1s"}
+			}
+			if _, err := checkLLM(context.Background(), cfg); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(called, tc.want) {
+				t.Fatalf("checked services = %v, want %v", called, tc.want)
+			}
+		})
+	}
+}
+
+func TestCheckLLMFallbackFailureIsReported(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	cfg := &config.Config{
+		Services: config.ServicesConfig{LLM: map[string]config.LLMService{"backup": {BaseURL: server.URL, Timeout: "1s"}}},
+		Sources:  []config.SourceConfig{{Enabled: true, LLM: []string{"backup"}}},
+	}
+	if _, err := checkLLM(context.Background(), cfg); err == nil || !strings.Contains(err.Error(), "backup models endpoint returned HTTP 401") {
+		t.Fatalf("fallback check error = %v", err)
+	}
+}
+
+func TestCheckTTSOnlyUsesEnabledProfiles(t *testing.T) {
+	for _, override := range []bool{false, true} {
+		var calls int
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls++
+			if r.Method != http.MethodPost || r.Header.Get("Ocp-Apim-Subscription-Key") != "test-key" {
+				t.Errorf("unexpected synthesis request")
+			}
+			_, _ = w.Write([]byte("test-audio"))
+		}))
+		cfg := &config.Config{
+			Defaults: config.DefaultsConfig{Generation: config.GenerationConfig{DialogueProfile: "active"}},
+			Services: config.ServicesConfig{TTS: map[string]config.TTSService{"azure": {Endpoint: server.URL, APIKey: "test-key", ConnectTimeout: "1s", ReceiveTimeout: "1s"}}},
+			DialogueProfiles: map[string]config.DialogueProfile{
+				"active": {Speakers: []config.SpeakerConfig{{ID: "host", Name: "Host", Voice: "azure:test-voice"}}},
+				"unused": {Speakers: []config.SpeakerConfig{{Voice: "invalid-voice"}}},
+			},
+			Sources: []config.SourceConfig{{Enabled: true}, {Enabled: false, Generation: &config.GenerationConfig{DialogueProfile: "unused"}}},
+		}
+		if override {
+			cfg.Defaults.Generation.DialogueProfile = "unused"
+			cfg.Sources[0].Generation = &config.GenerationConfig{DialogueProfile: "active"}
+		}
+		if detail, err := checkTTS(context.Background(), cfg); err != nil || detail != "active voices and synthesis OK" {
+			t.Fatalf("TTS check = %q, %v", detail, err)
+		}
+		if calls != 1 {
+			t.Fatalf("synthesis calls = %d, want 1", calls)
+		}
+		cfg.Sources[0].Enabled = false
+		if detail, err := checkTTS(context.Background(), cfg); err != nil || detail != "not used" {
+			t.Fatalf("disabled TTS = %q, %v", detail, err)
+		}
+		server.Close()
+	}
+}
+
+func TestCheckJevUsageAndResponse(t *testing.T) {
+	for _, tc := range []struct {
+		name, response, wantError string
+		status                    int
+	}{
+		{name: "valid", status: 200, response: `{"model":"resolved-model","answers":{"check":{"type":"noul","noul":0.9}}}`},
+		{name: "provider failure", status: 401, response: "not JSON", wantError: "Jev HTTP 401"},
+		{name: "invalid answer", status: 200, response: `{"model":"test","answers":{"check":{"type":"noul","noul":1.1}}}`, wantError: "invalid Jev probability or model"},
+		{name: "redirect", status: 302, wantError: "Jev HTTP 302"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls int
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if r.Method != http.MethodPost || r.URL.Path != "/systemone" || r.Header.Get("Authorization") != "Bearer test-key" {
+					t.Errorf("unexpected Jev request")
+				}
+				var body struct {
+					Model     string `json:"model"`
+					Questions map[string]struct {
+						Type string `json:"type"`
+					} `json:"questions"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Model != "test-model" || body.Questions["check"].Type != "noul" {
+					t.Errorf("invalid Jev request body: %v", err)
+				}
+				w.Header().Set("Location", "/redirect-target")
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.response))
+			}))
+			defer server.Close()
+			cfg := &config.Config{
+				Services: config.ServicesConfig{Jev: config.LLMService{BaseURL: server.URL, APIKey: "test-key", Model: "test-model", Timeout: "1s"}},
+				Defaults: config.DefaultsConfig{Screening: config.ScreeningConfig{Enabled: boolPointer(true), Services: []string{"jev"}}},
+				Sources:  []config.SourceConfig{{Enabled: false}},
+			}
+			if detail, err := checkJev(context.Background(), cfg); err != nil || detail != "not used" || calls != 0 {
+				t.Fatalf("disabled source Jev check = %q, %v, calls=%d", detail, err, calls)
+			}
+			cfg.Sources[0].Enabled = true
+			cfg.Sources[0].Screening = &config.ScreeningConfig{Enabled: boolPointer(false)}
+			if detail, err := checkJev(context.Background(), cfg); err != nil || detail != "not used" || calls != 0 {
+				t.Fatalf("disabled screening Jev check = %q, %v, calls=%d", detail, err, calls)
+			}
+			cfg.Sources[0].Screening = nil
+			_, err := checkJev(context.Background(), cfg)
+			if tc.wantError == "" && err != nil || tc.wantError != "" && (err == nil || err.Error() != tc.wantError) {
+				t.Fatalf("Jev error = %v, want %q", err, tc.wantError)
+			}
+			if calls != 1 {
+				t.Fatalf("Jev calls = %d, want 1", calls)
+			}
+		})
+	}
+}
+
+func boolPointer(value bool) *bool { return &value }
 
 func TestCheckCrawl4AI(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -38,6 +222,7 @@ func TestCheckCrawl4AI(t *testing.T) {
 			BaseURL: "  " + server.URL + "  ", APIToken: "health-token", Proxy: "   ",
 		}}},
 		Defaults: config.DefaultsConfig{Content: config.ContentConfig{Type: "crawl4ai"}},
+		Sources:  []config.SourceConfig{{Enabled: true}},
 	}
 	detail, err := checkCrawl4AI(context.Background(), cfg)
 	if err != nil {
@@ -73,7 +258,7 @@ func TestCheckCrawl4AICrawlModeWithSourceOverride(t *testing.T) {
 		Type:     "crawl4ai",
 		Crawl4AI: config.Crawl4AIContentConfig{Mode: &mode, BaseURL: &baseURL},
 	}
-	cfg := &config.Config{Sources: []config.SourceConfig{{Content: content}}}
+	cfg := &config.Config{Sources: []config.SourceConfig{{Enabled: true, Content: content}}}
 	detail, err := checkCrawl4AI(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -94,7 +279,7 @@ func TestCheckCrawl4AINotUsed(t *testing.T) {
 }
 
 func TestCheckJinaRejectsMissingBaseURL(t *testing.T) {
-	cfg := &config.Config{Defaults: config.DefaultsConfig{Content: config.ContentConfig{Type: "jina"}}}
+	cfg := &config.Config{Defaults: config.DefaultsConfig{Content: config.ContentConfig{Type: "jina"}}, Sources: []config.SourceConfig{{Enabled: true}}}
 	_, err := checkJina(context.Background(), cfg)
 	if err == nil || err.Error() != "base_url is not configured" {
 		t.Fatalf("checkJina() error = %v", err)
@@ -102,7 +287,7 @@ func TestCheckJinaRejectsMissingBaseURL(t *testing.T) {
 }
 
 func TestCheckCrawl4AIRejectsMissingBaseURL(t *testing.T) {
-	cfg := &config.Config{Defaults: config.DefaultsConfig{Content: config.ContentConfig{Type: "crawl4ai"}}}
+	cfg := &config.Config{Defaults: config.DefaultsConfig{Content: config.ContentConfig{Type: "crawl4ai"}}, Sources: []config.SourceConfig{{Enabled: true}}}
 	_, err := checkCrawl4AI(context.Background(), cfg)
 	if err == nil || err.Error() != "base_url is not configured" {
 		t.Fatalf("checkCrawl4AI() error = %v", err)
@@ -115,6 +300,7 @@ func TestCheckCrawl4AIRejectsUnsupportedMode(t *testing.T) {
 			BaseURL: "http://crawl4ai:11235", Mode: "browser",
 		}}},
 		Defaults: config.DefaultsConfig{Content: config.ContentConfig{Type: "crawl4ai"}},
+		Sources:  []config.SourceConfig{{Enabled: true}},
 	}
 	_, err := checkCrawl4AI(context.Background(), cfg)
 	if err == nil || err.Error() != `unsupported mode "browser"` {
@@ -131,6 +317,7 @@ func TestCheckCrawl4AIReportsHTTPStatusBeforeDecoding(t *testing.T) {
 	cfg := &config.Config{
 		Services: config.ServicesConfig{Content: config.ContentServices{Crawl4AI: config.Crawl4AIService{BaseURL: server.URL}}},
 		Defaults: config.DefaultsConfig{Content: config.ContentConfig{Type: "crawl4ai"}},
+		Sources:  []config.SourceConfig{{Enabled: true}},
 	}
 	_, err := checkCrawl4AI(context.Background(), cfg)
 	if err == nil || err.Error() != "HTTP 502" {
@@ -144,6 +331,7 @@ func TestCheckCrawl4AIRejectsInvalidProxy(t *testing.T) {
 			BaseURL: "http://crawl4ai:11235", Proxy: "not-a-url",
 		}}},
 		Defaults: config.DefaultsConfig{Content: config.ContentConfig{Type: "crawl4ai"}},
+		Sources:  []config.SourceConfig{{Enabled: true}},
 	}
 	_, err := checkCrawl4AI(context.Background(), cfg)
 	if err == nil || err.Error() != `invalid proxy URL "not-a-url"` {

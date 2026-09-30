@@ -44,6 +44,7 @@ func Run(ctx context.Context, cfg *config.Config) []Result {
 		{name: "jina", fn: checkJina},
 		{name: "crawl4ai", fn: checkCrawl4AI},
 		{name: "llm", fn: checkLLM},
+		{name: "jev", fn: checkJev},
 		{name: "tts", fn: checkTTS},
 	}
 
@@ -214,12 +215,13 @@ func checkRSS(ctx context.Context, cfg *config.Config) (string, error) {
 
 func checkJina(ctx context.Context, cfg *config.Config) (string, error) {
 	services := make(map[config.JinaService]struct{})
-	if cfg.Defaults.Content.Type == "jina" {
-		services[cfg.Defaults.Content.Jina.EffectiveService(cfg.Services.Content.Jina)] = struct{}{}
-	}
 	for _, source := range cfg.Sources {
-		if source.Content != nil && source.Content.Type == "jina" {
-			services[source.Content.Jina.EffectiveService(cfg.Services.Content.Jina)] = struct{}{}
+		if !source.Enabled {
+			continue
+		}
+		content := cfg.EffectiveContent(source)
+		if content.Type == "jina" {
+			services[content.Jina.EffectiveService(cfg.Services.Content.Jina)] = struct{}{}
 		}
 	}
 	if len(services) == 0 {
@@ -287,13 +289,13 @@ func checkCrawl4AI(ctx context.Context, cfg *config.Config) (string, error) {
 		Mode    string
 	}
 	checks := make(map[crawlCheck]struct{})
-	if cfg.Defaults.Content.Type == "crawl4ai" {
-		service := cfg.Defaults.Content.Crawl4AI.EffectiveService(cfg.Services.Content.Crawl4AI)
-		checks[crawlCheck{Service: service, Mode: service.EffectiveMode()}] = struct{}{}
-	}
 	for _, source := range cfg.Sources {
-		if source.Content != nil && source.Content.Type == "crawl4ai" {
-			service := source.Content.Crawl4AI.EffectiveService(cfg.Services.Content.Crawl4AI)
+		if !source.Enabled {
+			continue
+		}
+		content := cfg.EffectiveContent(source)
+		if content.Type == "crawl4ai" {
+			service := content.Crawl4AI.EffectiveService(cfg.Services.Content.Crawl4AI)
 			checks[crawlCheck{Service: service, Mode: service.EffectiveMode()}] = struct{}{}
 		}
 	}
@@ -401,13 +403,36 @@ func checkCrawl4AIService(ctx context.Context, service config.Crawl4AIService, m
 }
 
 func checkLLM(ctx context.Context, cfg *config.Config) (string, error) {
-	names := make([]string, 0, len(cfg.Services.LLM))
-	for name := range cfg.Services.LLM {
+	used := make(map[string]struct{})
+	for _, source := range cfg.Sources {
+		if !source.Enabled {
+			continue
+		}
+		for _, name := range cfg.EffectiveLLM(source) {
+			used[name] = struct{}{}
+		}
+		screening := cfg.EffectiveScreening(source)
+		if screening.IsEnabled() {
+			for _, ref := range screening.Services {
+				if name, ok := strings.CutPrefix(ref, "llm."); ok {
+					used[name] = struct{}{}
+				}
+			}
+		}
+	}
+	if len(used) == 0 {
+		return "not used", nil
+	}
+	names := make([]string, 0, len(used))
+	for name := range used {
 		names = append(names, name)
 	}
 	slices.Sort(names)
 	for _, name := range names {
-		service := cfg.Services.LLM[name]
+		service, ok := cfg.Services.LLM[name]
+		if !ok {
+			return "", fmt.Errorf("unknown LLM service %q", name)
+		}
 		timeout, err := time.ParseDuration(service.Timeout)
 		if err != nil {
 			return "", fmt.Errorf("%s timeout: %w", name, err)
@@ -448,14 +473,89 @@ func checkLLM(ctx context.Context, cfg *config.Config) (string, error) {
 	return strings.Join(names, ", ") + " authentication and models OK", nil
 }
 
+func checkJev(ctx context.Context, cfg *config.Config) (string, error) {
+	used := false
+	for _, source := range cfg.Sources {
+		if source.Enabled {
+			screening := cfg.EffectiveScreening(source)
+			used = used || screening.IsEnabled() && slices.Contains(screening.Services, "jev")
+		}
+	}
+	if !used {
+		return "not used", nil
+	}
+	service := cfg.Services.Jev
+	timeout, err := time.ParseDuration(service.Timeout)
+	if err != nil || timeout <= 0 {
+		return "", fmt.Errorf("invalid Jev timeout")
+	}
+	body, err := json.Marshal(map[string]any{
+		"model": service.Model,
+		"state": "rss-pod service check",
+		"questions": map[string]any{"check": map[string]any{
+			"type": "noul", "instructions": "Is this a service check?",
+			"criteria": map[string]string{"true": "A service check.", "false": "Other content."},
+		}},
+	})
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(service.BaseURL, "/")+"/systemone", bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("invalid Jev endpoint")
+	}
+	req.Header.Set("Authorization", "Bearer "+service.APIKey)
+	req.Header.Set("Content-Type", "application/json")
+	client, err := newContentHTTPClient(service.Proxy, timeout)
+	if err != nil {
+		return "", fmt.Errorf("invalid Jev proxy")
+	}
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("Jev connection failed or timed out")
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("Jev HTTP %d", resp.StatusCode)
+	}
+	var result struct {
+		Model   string `json:"model"`
+		Answers map[string]struct {
+			Type string   `json:"type"`
+			Noul *float64 `json:"noul"`
+		} `json:"answers"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&result); err != nil {
+		return "", fmt.Errorf("invalid Jev response JSON")
+	}
+	answer, ok := result.Answers["check"]
+	if !ok || answer.Type != "noul" || answer.Noul == nil || *answer.Noul < 0 || *answer.Noul > 1 || strings.TrimSpace(result.Model) == "" {
+		return "", fmt.Errorf("invalid Jev probability or model")
+	}
+	return "authentication and inference OK", nil
+}
+
 func checkTTS(ctx context.Context, cfg *config.Config) (string, error) {
-	profileNames := make([]string, 0, len(cfg.DialogueProfiles))
-	for name := range cfg.DialogueProfiles {
+	used := make(map[string]struct{})
+	for _, source := range cfg.Sources {
+		if source.Enabled {
+			used[cfg.EffectiveGeneration(source).DialogueProfile] = struct{}{}
+		}
+	}
+	if len(used) == 0 {
+		return "not used", nil
+	}
+	profileNames := make([]string, 0, len(used))
+	for name := range used {
 		profileNames = append(profileNames, name)
 	}
 	slices.Sort(profileNames)
 	for _, profileName := range profileNames {
-		dialogue := cfg.DialogueProfiles[profileName]
+		dialogue, ok := cfg.DialogueProfiles[profileName]
+		if !ok || len(dialogue.Speakers) == 0 {
+			return "", fmt.Errorf("profile %q has no speakers", profileName)
+		}
 		voices := make([]config.SpeakerVoice, len(dialogue.Speakers))
 		for i, speaker := range dialogue.Speakers {
 			voice, err := config.ParseSpeakerVoice(speaker.Voice)

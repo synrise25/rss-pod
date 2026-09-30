@@ -568,9 +568,6 @@ func (c *Config) Validate() error {
 		}
 	}
 
-	if err := c.validateScreening("defaults.screening", c.Defaults.Screening); err != nil {
-		return err
-	}
 	seen := make(map[string]struct{}, len(c.Sources))
 	cronParser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 	for i := range c.Sources {
@@ -592,8 +589,10 @@ func (c *Config) Validate() error {
 		if source.Content != nil {
 			content = *source.Content
 		}
-		if err := validateContent(source.ID, content, c.Services.Content); err != nil {
-			return err
+		if source.Enabled {
+			if err := validateContent(source.ID, content, c.Services.Content); err != nil {
+				return err
+			}
 		}
 		if len(source.LLM) > 0 {
 			if err := validateServiceReferences("source "+source.ID+" llm", source.LLM, c.Services.LLM); err != nil {
@@ -603,8 +602,10 @@ func (c *Config) Validate() error {
 		if err := c.validateGeneration("source "+source.ID+" generation", c.EffectiveGeneration(*source)); err != nil {
 			return err
 		}
-		if err := c.validateScreening("source "+source.ID+" screening", c.EffectiveScreening(*source)); err != nil {
-			return err
+		if source.Enabled {
+			if err := c.validateScreening("source "+source.ID+" screening", c.EffectiveScreening(*source)); err != nil {
+				return err
+			}
 		}
 		if source.Podcast != nil {
 			if maxAge, err := time.ParseDuration(c.EffectivePodcast(*source).MaxAge); err != nil || maxAge <= 0 {
@@ -616,6 +617,20 @@ func (c *Config) Validate() error {
 }
 
 func (c *Config) validateTTSServices() error {
+	used := make(map[string]bool)
+	for _, source := range c.Sources {
+		if !source.Enabled {
+			continue
+		}
+		profile := c.DialogueProfiles[c.EffectiveGeneration(source).DialogueProfile]
+		for _, speaker := range profile.Speakers {
+			voice, err := ParseSpeakerVoice(speaker.Voice)
+			if err != nil {
+				return err
+			}
+			used[voice.Service] = true
+		}
+	}
 	if len(c.Services.TTS) == 0 {
 		return errors.New("services.tts must contain at least one service")
 	}
@@ -623,10 +638,10 @@ func (c *Config) validateTTSServices() error {
 		switch name {
 		case EdgeTTSServiceName:
 		case AzureTTSServiceName:
-			if strings.TrimSpace(service.APIKey) == "" {
+			if used[name] && strings.TrimSpace(service.APIKey) == "" {
 				return errors.New("services.tts azure api_key must not be empty")
 			}
-			if strings.TrimSpace(service.Endpoint) == "" && strings.TrimSpace(service.Region) == "" {
+			if used[name] && strings.TrimSpace(service.Endpoint) == "" && strings.TrimSpace(service.Region) == "" {
 				return errors.New("services.tts azure region must not be empty when endpoint is not set")
 			}
 			if strings.TrimSpace(service.Endpoint) != "" {
