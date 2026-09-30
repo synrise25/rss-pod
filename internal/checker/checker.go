@@ -526,7 +526,11 @@ func checkJev(ctx context.Context, cfg *config.Config) (string, error) {
 			Noul *float64 `json:"noul"`
 		} `json:"answers"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&result); err != nil {
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return "", fmt.Errorf("read Jev response failed")
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
 		return "", fmt.Errorf("invalid Jev response JSON")
 	}
 	answer, ok := result.Answers["check"]

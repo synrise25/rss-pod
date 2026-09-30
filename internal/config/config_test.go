@@ -75,6 +75,49 @@ func TestScreeningValidationOnlyUsesEnabledSources(t *testing.T) {
 	}
 }
 
+func TestValidateOnlyEffectiveServiceProxies(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(minimalConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Services.Content.Jina = JinaService{BaseURL: "https://jina.example.com", Proxy: "invalid-proxy"}
+	cfg.Services.Content.Crawl4AI = Crawl4AIService{Proxy: "invalid-proxy"}
+	cfg.Services.LLM["unused"] = LLMService{Proxy: "invalid-proxy"}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("unused service proxies prevented startup: %v", err)
+	}
+	cfg.Defaults.Content = ContentConfig{Type: "jina", URL: URLMappingConfig{From: "item.link"}}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "content.jina.proxy") {
+		t.Fatalf("enabled source must validate its inherited Jina proxy: %v", err)
+	}
+	proxy := ""
+	cfg.Sources[0].Content = &ContentConfig{Type: "jina", URL: URLMappingConfig{From: "item.link"}, Jina: JinaContentConfig{Proxy: &proxy}}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("valid source proxy override should replace unused default: %v", err)
+	}
+	service := cfg.Services.LLM["one"]
+	service.Proxy = "invalid-proxy"
+	cfg.Services.LLM["one"] = service
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "services.llm one proxy") {
+		t.Fatalf("enabled generation service must validate its proxy: %v", err)
+	}
+}
+
+func TestValidateMalformedActiveVoiceHasProfileContext(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	data := strings.Replace(minimalConfig, "edge:voice-a", "invalid-voice", 1)
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "dialogue_profiles.default.speakers[0].voice") {
+		t.Fatalf("missing voice error context: %v", err)
+	}
+}
+
 func TestLoadCurrentConfig(t *testing.T) {
 	t.Setenv("DATABASE_HOST", "127.0.0.1")
 	t.Setenv("DATABASE_USER", "rsspod")

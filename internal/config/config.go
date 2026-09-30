@@ -556,18 +556,6 @@ func (c *Config) Validate() error {
 	if err := validateServiceReferences("defaults.llm", c.Defaults.LLM, c.Services.LLM); err != nil {
 		return err
 	}
-	if err := validateOptionalProxy("services.content.jina.proxy", c.Services.Content.Jina.Proxy); err != nil {
-		return err
-	}
-	if err := validateOptionalProxy("services.content.crawl4ai.proxy", c.Services.Content.Crawl4AI.Proxy); err != nil {
-		return err
-	}
-	for name, service := range c.Services.LLM {
-		if err := validateOptionalProxy("services.llm "+name+" proxy", service.Proxy); err != nil {
-			return err
-		}
-	}
-
 	seen := make(map[string]struct{}, len(c.Sources))
 	cronParser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 	for i := range c.Sources {
@@ -599,6 +587,13 @@ func (c *Config) Validate() error {
 				return err
 			}
 		}
+		if source.Enabled {
+			for _, name := range c.EffectiveLLM(*source) {
+				if err := validateOptionalProxy("services.llm "+name+" proxy", c.Services.LLM[name].Proxy); err != nil {
+					return err
+				}
+			}
+		}
 		if err := c.validateGeneration("source "+source.ID+" generation", c.EffectiveGeneration(*source)); err != nil {
 			return err
 		}
@@ -622,11 +617,12 @@ func (c *Config) validateTTSServices() error {
 		if !source.Enabled {
 			continue
 		}
-		profile := c.DialogueProfiles[c.EffectiveGeneration(source).DialogueProfile]
-		for _, speaker := range profile.Speakers {
+		profileName := c.EffectiveGeneration(source).DialogueProfile
+		profile := c.DialogueProfiles[profileName]
+		for i, speaker := range profile.Speakers {
 			voice, err := ParseSpeakerVoice(speaker.Voice)
 			if err != nil {
-				return err
+				return fmt.Errorf("dialogue_profiles.%s.speakers[%d].voice %w", profileName, i, err)
 			}
 			used[voice.Service] = true
 		}

@@ -144,6 +144,7 @@ func TestCheckJevUsageAndResponse(t *testing.T) {
 		{name: "valid", status: 200, response: `{"model":"resolved-model","answers":{"check":{"type":"noul","noul":0.9}}}`},
 		{name: "provider failure", status: 401, response: "not JSON", wantError: "Jev HTTP 401"},
 		{name: "invalid answer", status: 200, response: `{"model":"test","answers":{"check":{"type":"noul","noul":1.1}}}`, wantError: "invalid Jev probability or model"},
+		{name: "trailing garbage", status: 200, response: `{"model":"test","answers":{"check":{"type":"noul","noul":0.9}}} garbage`, wantError: "invalid Jev response JSON"},
 		{name: "redirect", status: 302, wantError: "Jev HTTP 302"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
