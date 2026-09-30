@@ -29,3 +29,10 @@ create and remove isolated schemas; never point this variable at production.
 - Do not enable sample sources that can call paid or external services.
 - Explain operational or migration impact in the pull request description.
 
+## Container releases
+
+Pull requests and pushes to `main` run tests, static checks, and a Docker build.
+Version tags matching `v*.*.*` publish `linux/amd64` and `linux/arm64` images to
+`ghcr.io/synrise25/rss-pod`. Image tags include the full semantic version,
+major/minor version, and `latest`. After publishing succeeds, the workflow
+creates a GitHub Release with generated release notes.

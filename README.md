@@ -7,7 +7,7 @@
     ·
     <a href="#quick-start">Quick start</a>
     ·
-    <a href="#container-images">Container images</a>
+    <a href="#configuration">Configuration</a>
   </p>
   <p>
     <a href="https://github.com/synrise25/rss-pod/actions/workflows/ci.yml"><img src="https://github.com/synrise25/rss-pod/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
@@ -17,249 +17,93 @@
   </p>
 </div>
 
-Information keeps piling up while the time to read keeps shrinking. rss-pod
-turns the RSS feeds you care about into natural multi-speaker podcasts, making
-your commute, drive, or walk an effortless way to stay informed.
-
-No screen, no endless backlog—put on your headphones and let the road bring you
-up to speed.
+rss-pod is a self-hosted RSS-to-podcast app. It uses an OpenAI-compatible LLM to
+turn content into multi-speaker conversations, synthesizes audio with Edge TTS
+or Azure Speech, and provides a web player and podcast RSS feeds. Listen to the
+content you care about during your commute, drive, or walk.
 
 ![rss-pod web player in English](docs/assets/player-en.png)
 
-rss-pod is a Go application that turns RSS items into conversational podcast
-episodes. It resolves source content, asks an OpenAI-compatible LLM for a
-structured multi-speaker script, synthesizes audio with Edge TTS or Azure
-Speech, publishes media to S3-compatible storage, and exposes both podcast
-feeds and a lightweight web player.
-
-The complete workflow is durable: business state and background jobs live in
-PostgreSQL with River, so interrupted episodes can resume from completed stages
-instead of starting over.
-
-> [!NOTE]
-> rss-pod is an early-stage self-hosted project. Configuration and migrations
-> are explicit, and the default example keeps every feed disabled.
-
-## Inspiration
-
-rss-pod was inspired by [Zenfeed](https://github.com/glidea/zenfeed), a
-powerful and feature-rich RSS + AI project. I wanted a smaller,
-operations-focused system shaped around my own self-hosted podcast workflow:
-some of Zenfeed's broader capabilities were outside my needs, while jobs orchestration and the listening experience called for a different 
-set of choices. That narrower focus led to rss-pod.
-
 ## Highlights
 
-- RSS, derived RSS, Jina-backed, and Crawl4AI-backed content expansion
-- OpenAI-compatible LLM providers with ordered fallback
-- Reusable two-speaker dialogue profiles and strict script validation
-- Edge TTS, Azure Speech, and Azure MultiTalker support
-- Durable PostgreSQL + River job orchestration with retries and resumability
-- S3/MinIO storage for source material, intermediate artifacts, and media
-- Read-only public player separated from the loopback-only management API
-- One static Go binary and one multi-platform container image
+- Content expansion through direct RSS, derived RSS, Jina, and Crawl4AI
+- Ordered LLM fallback and optional content screening before generation
+- Custom dialogue roles and voices, with Edge TTS, Azure Speech, and Azure MultiTalker
+- PostgreSQL + River for durable progress, automatic retries, and resumability
+- S3/MinIO storage for source content, scripts, and audio
+- English and Chinese player, with an optional admin page for episode visibility and screening results
+- Run with one Go binary or Docker container
 
 ## How it works
 
 ```mermaid
 flowchart LR
-    RSS[RSS feeds] --> Source[source]
-    Source --> Content[content]
-    Content --> Screening{optional screening}
-    Screening -->|allow or disabled| LLM[LLM script]
-    Screening -->|skip| Skipped[record skip reason]
-    LLM --> TTS[TTS segments]
-    TTS --> Media[media publish]
-    Media --> Player[web player]
-    Media --> Feed[podcast RSS]
-
-    DB[(PostgreSQL + River)] --- Source
-    DB --- Content
-    DB --- LLM
-    DB --- TTS
-    DB --- Media
-    S3[(S3 / MinIO)] --- Content
-    S3 --- TTS
-    S3 --- Media
+    RSS[RSS feeds] --> Content[Content expansion]
+    Content --> Screening{Optional screening}
+    Screening -->|allow or disabled| LLM[Dialogue script]
+    Screening -->|skip| Skipped[Save screening result]
+    LLM --> TTS[Synthesize audio]
+    TTS --> Publish[Publish to object storage]
+    Publish --> Player[Web player / podcast RSS]
 ```
+
+Progress is stored in PostgreSQL. After a restart or temporary provider failure,
+episodes can continue from completed stages.
 
 ## Quick start
 
-### Prerequisites
+### 1. Prepare services and configuration
 
-- Go 1.26.2 or a compatible newer toolchain
-- PostgreSQL
-- S3-compatible object storage such as MinIO
-- At least one OpenAI-compatible LLM endpoint
-- Edge TTS and/or Azure Speech
-
-Need an OpenAI-compatible LLM provider? [SiliconFlow](https://cloud.siliconflow.cn/i/eMg5g29e)
-offers a broad model catalog and works with rss-pod's provider configuration.
-Register through this referral link and complete identity verification, and you
-and the project maintainer can each receive ¥16 in platform credit—enough for
-plenty of personal testing and light use.
-
-Create local configuration files:
+You need PostgreSQL, S3-compatible storage, at least one OpenAI-compatible LLM,
+and Edge TTS or Azure Speech. The steps below use Docker, so Go is not required
+on the host. Provision the external services separately.
 
 ```bash
+git clone https://github.com/synrise25/rss-pod.git
+cd rss-pod
 cp config.example.yaml config.yaml
 cp .env.example .env
 ```
 
-Edit both files for your services, then validate and start the application:
+Edit the two local files:
+
+- `.env`: fill in connection settings and credentials for your database, storage, and chosen LLM.
+- `config.yaml`: confirm the database name and storage buckets. Create the
+  `rsspod-private` and `rsspod-media` buckets, and make media under
+  `PUBLIC_MEDIA_BASE_URL` publicly readable. Use a non-superuser database account.
+- Start with one LLM service, such as `deepseek`, and set `defaults.llm` to
+  `[deepseek]`. You can keep the example service name while using any compatible
+  provider's endpoint and model.
+- Start with the `zhihu-daily` source: replace `feed.url` with your RSS URL and
+  set `enabled: true`. Its voices use Edge TTS, so Azure is not needed. Leave
+  other sources disabled.
+
+All example sources are disabled by default. `check` verifies the database,
+storage, and content services, LLMs, screening backends, and voice profiles used
+by enabled sources. Unused services do not receive external checks.
+Database and storage addresses must be reachable from the container; the
+example's `127.0.0.1` addresses do not point to the host from inside a container.
+
+Need an LLM provider? You can register through this
+[SiliconFlow referral link](https://cloud.siliconflow.cn/i/eMg5g29e). You and the
+maintainer may receive credits when the platform's promotion conditions are met.
+
+### 2. Check and start
+
+Build from the current checkout so the image matches its configuration example:
 
 ```bash
-go test ./...
-go run ./cmd/rss-pod check
-go run ./cmd/rss-pod migrate
-go run ./cmd/rss-pod run
-```
+docker build -t rss-pod:local .
 
-The public player listens on `:8080`. Health checks and management endpoints
-listen on `127.0.0.1:8081` and are intentionally unavailable on the public
-listener. `/` redirects from the browser's preferred language to the stable
-English route at `/en` or Simplified Chinese at `/zh-cn`; the language switcher
-keeps the current query string.
-
-Episodes are grouped by their task's edition date: scheduled tasks use the planned
-trigger date, and manual tasks use the submission date, in
-`defaults.schedule.timezone`. Overnight queueing, generation time and retries do
-not change that date. The player opens the latest date with playable episodes;
-RSS publication timestamps still reflect actual audio publication. Episodes
-created before this upgrade temporarily use their creation date without trying to
-reconstruct their original run. The player API returns `edition_date`
-(`YYYY-MM-DD`); `since` (inclusive) and `before` (exclusive) filter edition dates
-and accept date strings. Existing RFC3339 parameters are converted to dates in
-the configured timezone.
-
-During playback, once the current audio is fully buffered, the player preloads
-one upcoming episode in the current date and feed selection. Switching to that
-episode reuses the buffered audio; changing filters or skipping to another episode
-releases an unused preload. This cache lasts only for the current page and is not
-an offline download. Browser policies, especially on mobile, may limit buffering.
-
-### Admin page and episode visibility
-
-The optional admin page shares the player port: `/admin` opens in Chinese, with
-explicit `/admin/en` and `/admin/zh-cn` routes also available. All admin pages and
-`/api/v1/admin/*` endpoints are disabled when no secret is configured. All three
-page routes redirect trailing-slash URLs to their canonical paths while preserving
-query parameters. They do not expose operational configuration or job retry controls.
-
-After upgrading, run `rss-pod migrate`, then inject this environment variable
-into `serve` or `run` and restart:
-
-```dotenv
-RSS_POD_ADMIN_TOTP_SECRET=<your generated Base32 secret>
-```
-
-No public URL configuration is needed: a site at `https://example.com` has its
-admin page at `https://example.com/admin`. The service checks that write requests
-come from the current site's origin and also requires a CSRF token. Use HTTPS in
-production; loopback HTTP is allowed for local development. Reverse proxies must
-preserve the original `Host` and forward `/admin`, `/admin/*` and `/api/v1/admin/*`
-to the player port.
-
-Generate a secret locally and store it in the ignored `.env` or a secret manager:
-
-```bash
-python3 -c 'import base64, secrets; print(base64.b32encode(secrets.token_bytes(20)).decode())'
-```
-
-Add the same secret manually to your authenticator, using time-based **SHA-1,
-six digits and 30 seconds**. This is TOTP single-factor login, not a password plus
-a second factor. Sessions last 30 minutes and use HttpOnly, SameSite cookies
-with Secure enabled on HTTPS. Write operations check the origin and a CSRF token.
-Each secret permits up to five login attempts per minute; successful codes
-cannot be reused. Rate limits, replay protection and sessions are stored in
-PostgreSQL and shared across instances. Keep server clocks synchronized.
-If you lose your authenticator, replace the environment secret and restart all
-server instances; old sessions become invalid.
-
-The admin page reuses the player's date filters, source filters and playback
-cards, adding a **Hide / Restore** button to each episode:
-
-- Hidden episodes disappear from the public player and Podcast RSS. Admins can
-  still see the hidden state and restore them.
-- Source content, scripts, audio and RSS deduplication records remain, preventing
-  ordinary repeat polling from regenerating the episode while records are retained.
-- Hiding does not extend retention: the current database cleanup threshold is
-  ten days, and audio follows the object store lifecycle.
-- Visibility is reversible moderation, not file access control. Existing audio
-  links, downloads and client caches are not revoked.
-
-### Player notice
-
-The player can show a Markdown notice between the page heading and the date
-tabs. Copy the example and edit it as needed:
-
-```bash
-cp notice.example.md notice.md
-```
-
-Then set the file path in `config.yaml`:
-
-```yaml
-runtime:
-  http:
-    notice_file: notice.md
-```
-
-The notice stays hidden when `notice_file` is empty, the configured file is
-missing, or the file is empty. The service reads the file on every page load, so
-edits to `notice.md` appear after a refresh without rebuilding the image.
-CommonMark and GitHub Flavored Markdown features such as tables, strikethrough,
-and task lists are supported. Raw HTML in Markdown is not executed for security.
-Notice files are limited to 64 KiB.
-
-The notice can be hidden with its dismiss button. The player stores a fingerprint
-of the notice content in browser storage for the current site, so the same notice
-stays hidden on later visits. An updated notice, cleared site data, or a page load
-that observes the notice as removed or empty clears the dismissal. This preference
-is local to each browser and device. If browser storage is unavailable, dismissal
-lasts only for the current page.
-
-The main commands are:
-
-| Command | Purpose |
-| --- | --- |
-| `check` | Validate configuration and external services |
-| `migrate` | Apply application and River database migrations |
-| `poll` | Explicitly enqueue one or more source polls; use `--resume-incomplete` to recover incomplete episodes |
-| `serve` | Run only the HTTP player and management listeners |
-| `worker` | Run selected River queues |
-| `run` | Run the HTTP service, scheduler, and every queue |
-
-### Recovering incomplete episodes
-
-`poll --resume-incomplete` recovers incomplete episodes in the current RSS poll
-scope when they have no active River jobs. This includes intermediate states
-such as `content_ready` and `script_ready` left behind by cancelled or deleted
-jobs. Recovery continues from saved artifacts: resolve missing content, screen
-as configured before generating a missing script, or resume TTS while reusing
-existing audio segments. Published and editorially skipped episodes stay
-terminal. Episodes with queued, running, or retrying jobs are not enqueued again.
-
-`--limit` caps the number of RSS items processed, not the number of podcasts to
-produce. To recover an episode outside the current RSS list, use the loopback
-management API's `POST /api/v1/episodes/{episodeID}/retry` endpoint.
-
-## Docker
-
-Build the image locally:
-
-```bash
-docker build -t rss-pod:dev .
-```
-
-Run migrations and then start the combined service with your local secrets and
-configuration mounted read-only:
-
-```bash
 docker run --rm \
   --env-file .env \
   --volume "$PWD/config.yaml:/app/config.yaml:ro" \
-  rss-pod:dev migrate --config /app/config.yaml
+  rss-pod:local check
+
+docker run --rm \
+  --env-file .env \
+  --volume "$PWD/config.yaml:/app/config.yaml:ro" \
+  rss-pod:local migrate
 
 docker run --detach \
   --name rss-pod \
@@ -267,164 +111,148 @@ docker run --detach \
   --publish 127.0.0.1:8080:8080 \
   --env-file .env \
   --volume "$PWD/config.yaml:/app/config.yaml:ro" \
-  rss-pod:dev run --config /app/config.yaml
+  rss-pod:local run
 ```
 
-When `notice_file: notice.md` is configured, add this read-only mount to the
-startup command:
+Open [http://localhost:8080](http://localhost:8080). The player selects English
+or Chinese based on your browser's language. A fresh installation has no
+episodes until you trigger generation.
+
+### 3. Generate your first episode
+
+```bash
+docker exec rss-pod rss-pod poll --sources zhihu-daily --limit 1
+docker logs -f rss-pod
+```
+
+`--sources` takes a source's `id`; `--limit 1` processes one RSS item. Generation
+runs asynchronously after enqueueing. Refresh the player when it finishes to
+listen. Subsequent polls follow the source's `schedule.cron`.
+
+### Other ways to run
+
+Prebuilt images at `ghcr.io/synrise25/rss-pod` support `linux/amd64` and
+`linux/arm64`, with version tags and `latest`. For a released image, use the
+README and configuration example from the
+[matching release](https://github.com/synrise25/rss-pod/releases).
+
+With Go 1.26.2 or a compatible newer toolchain installed, you can run directly
+after completing the configuration above:
+
+```bash
+go run ./cmd/rss-pod check
+go run ./cmd/rss-pod migrate
+go run ./cmd/rss-pod run
+```
+
+Keep `run` running and execute
+`go run ./cmd/rss-pod poll --sources zhihu-daily --limit 1` in another terminal
+to generate your first episode.
+
+## Usage and optional features
+
+### Player
+
+The player groups episodes by their task's edition date; overnight queueing and
+retries do not change it. Set the timezone with `defaults.schedule.timezone`.
+The player opens the latest date with playable episodes and preloads the next
+episode to reduce switching delays. Preloading lasts only for the current page.
+
+### Admin page
+
+Sign in at `/admin` to hide or restore episodes and inspect recently skipped
+content. The page is disabled by default. To enable it, generate a secret:
+
+```bash
+python3 -c 'import base64, secrets; print(base64.b32encode(secrets.token_bytes(20)).decode())'
+```
+
+Set `RSS_POD_ADMIN_TOTP_SECRET` in `.env` to the result. Add the same secret to
+your authenticator using time-based **SHA-1, six digits, and 30 seconds**.
+Login requires only the dynamic code; sessions last 30 minutes. Restart the
+local process, or recreate the Docker container to load the new environment.
+
+Hidden episodes disappear from the public player and podcast RSS. Their source
+content, scripts, and audio remain, so unexpired episodes can be restored. Hiding does
+not extend retention or revoke existing audio links, downloads, or client caches.
+If you lose your authenticator, replace the secret and restart the service;
+old sessions become invalid. Keep server clocks synchronized.
+
+### Content screening
+
+Screening is disabled by default. To enable it, set `enabled` to `true` under
+`defaults.screening` or a source's `screening`. Set `services` to an independent,
+ordered chain such as `[llm.deepseek]` or `[jev, llm.deepseek]`. Sources can
+override the defaults; see [`config.example.yaml`](config.example.yaml) for fields.
+
+A valid allow/skip decision ends screening. Provider failures try the next
+service; if all fail, the task retries. Skipped content produces no script or
+audio, and its reason is visible in the admin page.
+Jev uses the `JEV_*` connection settings in `.env` and skips when its probability
+reaches `jev.skip_threshold`, which defaults to `0.7`. For long content, configure
+a fallback LLM with enough input capacity. Pin Jev model versions to avoid
+reusing cached decisions after a floating alias changes.
+
+### Player notice
+
+Copy `notice.example.md` to `notice.md` and set
+`runtime.http.notice_file: notice.md` to show a Markdown notice. Empty or missing
+files produce no notice. Edits appear after a page refresh. Dismissed notices
+stay hidden until their content changes.
+
+For Docker, add a read-only mount to the startup command:
 
 ```bash
 --volume "$PWD/notice.md:/app/notice.md:ro" \
 ```
 
-Mount `prompts/` as well when you maintain a deployment-specific prompt.
+## Commands and recovery
 
-## Container images
+| Command | Purpose |
+| --- | --- |
+| `check` | Validate configuration, shared infrastructure, and services used by enabled sources |
+| `migrate` | Apply database migrations |
+| `poll --sources <id>` | Poll selected sources; `all` selects every enabled source |
+| `run` | Run the web service, scheduler, and all job queues |
+| `serve` | Run only the web service and management API |
+| `worker` | Run job queues only; select them with `--queues` |
 
-GitHub Actions validates the Docker build on every pull request and push to
-`main`. Version tags matching `v*.*.*` publish `linux/amd64` and `linux/arm64`
-images to:
+Recover failed or interrupted episodes:
 
-```text
-ghcr.io/synrise25/rss-pod
+```bash
+docker exec rss-pod rss-pod poll --sources zhihu-daily --resume-incomplete
 ```
 
-Published tags include the full semantic version, the major/minor version, and
-`latest`. After the container publish succeeds, the workflow also creates a
-GitHub Release with automatically generated release notes.
+Recovery covers the current RSS poll scope and reuses saved content, scripts,
+and audio segments. Published or skipped episodes and those with active jobs
+are not enqueued again.
 
 ## Configuration
 
-- [`config.example.yaml`](config.example.yaml) — publishable configuration
-  reference with bilingual comments; copy it to ignored `config.yaml` before use
-- [`notice.example.md`](notice.example.md) — Markdown player notice example;
-  copy it to ignored `notice.md` before use
-- [`.env.example`](.env.example) — environment variables referenced by the
-  configuration
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — development and pull request guidance
+- [`config.example.yaml`](config.example.yaml): complete reference with English
+  and Chinese comments, including Crawl4AI, V2EX expansion, and screening examples.
+- [`.env.example`](.env.example): connection settings and credential variables.
+- [`notice.example.md`](notice.example.md): sample player notice.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md): development, testing, and contribution guide.
 
-Real credentials belong in environment variables or a secret manager. Never
-commit `.env` or a deployment-specific `config.yaml`.
-
-Crawl4AI supports `md` mode (the default, using `/md`) and `crawl` mode (using
-`/crawl`). `filter` selects `raw` or `fit` only in `md` mode; `crawl` mode
-requires a transform so unprocessed HTML is never sent directly to the LLM.
-`services.content.jina` and `services.content.crawl4ai` provide global defaults.
-A source may override any corresponding service field under
-`content.jina` or `content.crawl4ai`, including an explicit empty proxy. Keep
-credential overrides in `env://` references.
-
-V2EX topics can use `crawl` mode with the built-in `v2ex-topic` transform:
-
-```yaml
-content:
-  type: crawl4ai
-  url:
-    from: item.link
-  crawl4ai:
-    mode: crawl
-  transform:
-    type: v2ex-topic
-```
-
-The transform extracts the title, topic body, every paginated reply, and reply
-thanks visible in the page HTML, deduplicating everything into one Markdown
-Document without relying on the V2EX API. `max_documents_per_item` limits only
-Documents produced by derived RSS; it does not limit replies inside this
-Document. Source material is truncated at rss-pod's 120,000-character LLM
-prompt limit, with a warning log that excludes content and URLs.
-
-### Optional content screening
-
-Screening runs between content resolution and script generation and is disabled
-by default. Its independent `screen_content` River job shares the existing
-`runtime.jobs.queues.llm.concurrency` with script generation. It does not inherit
-the script-generation model list.
-
-```yaml
-services:
-  jev:
-    base_url: env://JEV_BASE_URL # Excludes /systemone
-    api_key: env://JEV_API_KEY
-    model: env://JEV_MODEL
-    timeout: 30s
-    proxy: ""
-  # Keep the existing services.llm configuration
-
-defaults:
-  screening:
-    enabled: false
-    services: [jev, llm.deepseek]
-    instructions: ""
-    jev:
-      skip_threshold: 0.7
-
-sources:
-  - id: v2ex-hot
-    # Keep the remaining source fields; enable when ready
-    screening:
-      enabled: false
-```
-
-Copy the Jev variables from `.env.example` into your local `.env`: `JEV_BASE_URL`,
-`JEV_API_KEY`, and `JEV_MODEL`. The API key is empty by default. Set `timeout`
-directly in YAML; no `JEV_TIMEOUT` variable is required.
-
-`services` is an ordered chain: `jev` references `services.jev`, and
-`llm.<name>` references `services.llm`. A valid `allow` or `skip` ends screening.
-Timeouts, oversized inputs, rate limits, authentication failures, other provider
-errors, and invalid responses try the next service. If all services fail, the
-job retries and eventually becomes `failed`. Cancellation stops the chain.
-Errors never become an editorial decision.
-
-Omitted source fields inherit defaults. `services` replaces the entire list,
-`enabled: false` disables screening, `instructions: ""` clears extra rules, and
-`jev.skip_threshold` can be overridden per source. To use only an LLM for one
-source, set `services: [llm.gemini]`.
-
-**Configuration upgrade:** `screening.llm` has been removed. Replace
-`llm: [deepseek]` with `services: [llm.deepseek]` and change the top-level
-`version` to `7`. The removed field is rejected instead of silently ignored.
-
-`instructions` applies to both backends: as LLM system instructions or Jev
-question instructions. Jev's Noul answer supplies a skip probability; values at
-or above `skip_threshold` skip the episode, and lower values allow it. The default
-is 0.7, with a valid range of `(0, 1]`. Set it in YAML, not an environment variable.
-The generated reason includes the probability and threshold; it is a template,
-not a model-written explanation. Jev evaluates overall discussion value: a few
-technical comments do not automatically preserve a thread dominated by referral
-codes and promotion.
-
-Both backends receive the same source documents as script generation, with no
-extra reply sampling and the existing 120,000-character application limit.
-Characters are not tokens. Jev's `max_tokens_exceeded` error falls through to the
-next service without further truncating the replies. Configure a fallback LLM
-that can handle the input size.
-
-Stored results include `decision`, `reason`, `backend`, `service`, actual model
-version, and optional `skip_probability`. The existing `llm_service` response
-field remains populated for LLM results and is empty for Jev. Cached decisions
-include content, policy, service order, models, and threshold; rotating credentials
-does not invalidate them. Pin model versions: upstream changes behind a floating
-alias such as `jev-latest` do not automatically invalidate stored decisions.
-`skipped` is terminal and produces no script or audio; ordinary retries do not
-re-enqueue skipped episodes.
-
-After signing in at `/admin`, expand **Recently skipped** to inspect results.
-Loopback management episode list/detail responses include `screening` as well.
-Public player and podcast feeds show only published episodes. Before starting
-the new version, run `migrate` to add screening metadata columns and update the
-configuration to version 7 as described above.
-
+Customize roles and voices with `dialogue_profiles` and script templates with
+`prompts/`. Deployment-specific prompts can be mounted read-only at `/app/prompts`.
+Keep real configuration and credentials in local `config.yaml`, `.env`, or a
+secret manager; never commit them.
 
 ## Security model
 
-The public listener serves the player and read-only `/api/v1/player/*` routes
-by default. Configuring the admin environment variables additionally enables
-TOTP-protected `/admin` and `/api/v1/admin/*` routes for hiding and restoring
-episodes and viewing skip reasons. Health checks, polling, retries, database-backed queries, and podcast
-management routes are bound to a loopback-only listener. Do not publish the
-management port from a container or reverse proxy it to the internet.
+The player listens on `:8080`. Setting an admin secret enables code-protected
+admin routes on the same port. Health checks, polling, retries, and podcast
+management routes listen on `127.0.0.1:8081`; do not expose or proxy that listener
+to the internet. Use HTTPS for public access. Point reverse proxies at the
+player port and preserve the original `Host`.
+
+## Inspiration
+
+rss-pod was inspired by [Zenfeed](https://github.com/glidea/zenfeed). It focuses
+on my self-hosted podcast workflow, with different choices around job
+orchestration and the listening experience.
 
 ## License
 
