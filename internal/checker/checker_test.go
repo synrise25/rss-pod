@@ -279,6 +279,79 @@ func TestCheckCrawl4AINotUsed(t *testing.T) {
 	}
 }
 
+func TestCheckCrawl4AIServiceContent(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		mode     string
+		response string
+		wantErr  string
+	}{
+		{name: "markdown body", mode: "md", response: `{"success":true,"markdown":"This domain is for use in documentation examples."}`},
+		{name: "markdown collapsed body", mode: "md", response: `{"success":true,"markdown":"Thisdomainisforuseindocumentationexamples."}`},
+		{name: "markdown mixed whitespace", mode: "md", response: `{"success":true,"markdown":"THIS DOMAIN\nis for\tuse in documentation examples."}`},
+		{name: "markdown heading", mode: "md", response: `{"success":true,"markdown":"# Example Domain"}`},
+		{name: "markdown failure", mode: "md", response: `{"success":false,"markdown":"# Example Domain"}`, wantErr: "service reported an unsuccessful crawl"},
+		{name: "markdown empty", mode: "md", response: `{"success":true,"markdown":" \n\t"}`, wantErr: "response contained empty Markdown"},
+		{name: "markdown wrong page", mode: "md", response: `{"success":true,"markdown":"Access denied"}`, wantErr: "Markdown did not contain the example.com title or explanatory text"},
+		{name: "html body", mode: "crawl", response: `{"success":true,"results":[{"success":true,"html":"<p>This domain is for use in documentation examples.</p>"}]}`},
+		{name: "crawl failure", mode: "crawl", response: `{"success":false}`, wantErr: "service reported an unsuccessful crawl"},
+		{name: "crawl missing result", mode: "crawl", response: `{"success":true,"results":[]}`, wantErr: "expected 1 crawl result, got 0"},
+		{name: "crawl extra result", mode: "crawl", response: `{"success":true,"results":[{},{}]}`, wantErr: "expected 1 crawl result, got 2"},
+		{name: "crawl result failure", mode: "crawl", response: `{"success":true,"results":[{"success":false,"html":"<h1>Example Domain</h1>"}]}`, wantErr: "crawl result reported failure"},
+		{name: "html empty", mode: "crawl", response: `{"success":true,"results":[{"success":true,"html":" \n\t"}]}`, wantErr: "response contained empty HTML"},
+		{name: "html wrong page", mode: "crawl", response: `{"success":true,"results":[{"success":true,"html":"<h1>Access denied</h1>"}]}`, wantErr: "HTML did not contain the example.com title or explanatory text"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tc.response))
+			}))
+			defer server.Close()
+			for _, filter := range []string{"fit", "raw"} {
+				_, err := checkCrawl4AIService(context.Background(), config.Crawl4AIService{BaseURL: server.URL, Filter: filter}, tc.mode)
+				if tc.wantErr == "" {
+					if err != nil {
+						t.Fatalf("filter=%s: %v", filter, err)
+					}
+				} else if err == nil || err.Error() != tc.wantErr {
+					t.Fatalf("filter=%s: error = %v, want %q", filter, err, tc.wantErr)
+				}
+			}
+		})
+	}
+}
+
+func TestCheckCrawl4AIIdentifiesFailingSourceAndMode(t *testing.T) {
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/crawl" {
+			_, _ = w.Write([]byte(`{"success":true,"results":[{"success":true,"html":"<h1>Example Domain</h1>"}]}`))
+		} else {
+			_, _ = w.Write([]byte(`{"success":true,"markdown":""}`))
+		}
+	}))
+	defer server.Close()
+	mode := "crawl"
+	cfg := &config.Config{
+		Services: config.ServicesConfig{Content: config.ContentServices{Crawl4AI: config.Crawl4AIService{BaseURL: server.URL}}},
+		Defaults: config.DefaultsConfig{Content: config.ContentConfig{Type: "crawl4ai"}},
+		Sources: []config.SourceConfig{
+			{ID: "html-source", Enabled: true, Content: &config.ContentConfig{Type: "crawl4ai", Crawl4AI: config.Crawl4AIContentConfig{Mode: &mode}}},
+			{ID: "duplicate-html-source", Enabled: true, Content: &config.ContentConfig{Type: "crawl4ai", Crawl4AI: config.Crawl4AIContentConfig{Mode: &mode}}},
+			{ID: "markdown-source", Enabled: true},
+		},
+	}
+	_, err := checkCrawl4AI(context.Background(), cfg)
+	if err == nil || err.Error() != "source markdown-source mode=md filter=fit: response contained empty Markdown" {
+		t.Fatalf("error = %v", err)
+	}
+	if !reflect.DeepEqual(paths, []string{"/crawl", "/md"}) {
+		t.Fatalf("request paths = %v", paths)
+	}
+}
+
 func TestCheckJinaRejectsMissingBaseURL(t *testing.T) {
 	cfg := &config.Config{Defaults: config.DefaultsConfig{Content: config.ContentConfig{Type: "jina"}}, Sources: []config.SourceConfig{{Enabled: true}}}
 	_, err := checkJina(context.Background(), cfg)
@@ -288,9 +361,9 @@ func TestCheckJinaRejectsMissingBaseURL(t *testing.T) {
 }
 
 func TestCheckCrawl4AIRejectsMissingBaseURL(t *testing.T) {
-	cfg := &config.Config{Defaults: config.DefaultsConfig{Content: config.ContentConfig{Type: "crawl4ai"}}, Sources: []config.SourceConfig{{Enabled: true}}}
+	cfg := &config.Config{Defaults: config.DefaultsConfig{Content: config.ContentConfig{Type: "crawl4ai"}}, Sources: []config.SourceConfig{{ID: "test", Enabled: true}}}
 	_, err := checkCrawl4AI(context.Background(), cfg)
-	if err == nil || err.Error() != "base_url is not configured" {
+	if err == nil || err.Error() != "source test mode=md filter=fit: base_url is not configured" {
 		t.Fatalf("checkCrawl4AI() error = %v", err)
 	}
 }
@@ -301,10 +374,10 @@ func TestCheckCrawl4AIRejectsUnsupportedMode(t *testing.T) {
 			BaseURL: "http://crawl4ai:11235", Mode: "browser",
 		}}},
 		Defaults: config.DefaultsConfig{Content: config.ContentConfig{Type: "crawl4ai"}},
-		Sources:  []config.SourceConfig{{Enabled: true}},
+		Sources:  []config.SourceConfig{{ID: "test", Enabled: true}},
 	}
 	_, err := checkCrawl4AI(context.Background(), cfg)
-	if err == nil || err.Error() != `unsupported mode "browser"` {
+	if err == nil || err.Error() != `source test mode=browser filter=fit: unsupported mode "browser"` {
 		t.Fatalf("checkCrawl4AI() error = %v", err)
 	}
 }
@@ -318,10 +391,10 @@ func TestCheckCrawl4AIReportsHTTPStatusBeforeDecoding(t *testing.T) {
 	cfg := &config.Config{
 		Services: config.ServicesConfig{Content: config.ContentServices{Crawl4AI: config.Crawl4AIService{BaseURL: server.URL}}},
 		Defaults: config.DefaultsConfig{Content: config.ContentConfig{Type: "crawl4ai"}},
-		Sources:  []config.SourceConfig{{Enabled: true}},
+		Sources:  []config.SourceConfig{{ID: "test", Enabled: true}},
 	}
 	_, err := checkCrawl4AI(context.Background(), cfg)
-	if err == nil || err.Error() != "HTTP 502" {
+	if err == nil || err.Error() != "source test mode=md filter=fit: HTTP 502" {
 		t.Fatalf("checkCrawl4AI() error = %v", err)
 	}
 }
@@ -332,10 +405,10 @@ func TestCheckCrawl4AIRejectsInvalidProxy(t *testing.T) {
 			BaseURL: "http://crawl4ai:11235", Proxy: "not-a-url",
 		}}},
 		Defaults: config.DefaultsConfig{Content: config.ContentConfig{Type: "crawl4ai"}},
-		Sources:  []config.SourceConfig{{Enabled: true}},
+		Sources:  []config.SourceConfig{{ID: "test", Enabled: true}},
 	}
 	_, err := checkCrawl4AI(context.Background(), cfg)
-	if err == nil || err.Error() != `invalid proxy URL "not-a-url"` {
+	if err == nil || err.Error() != `source test mode=md filter=fit: invalid proxy URL "not-a-url"` {
 		t.Fatalf("checkCrawl4AI() error = %v", err)
 	}
 }

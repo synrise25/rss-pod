@@ -288,7 +288,8 @@ func checkCrawl4AI(ctx context.Context, cfg *config.Config) (string, error) {
 		Service config.Crawl4AIService
 		Mode    string
 	}
-	checks := make(map[crawlCheck]struct{})
+	checks := make(map[crawlCheck]string)
+	var order []crawlCheck
 	for _, source := range cfg.Sources {
 		if !source.Enabled {
 			continue
@@ -296,18 +297,22 @@ func checkCrawl4AI(ctx context.Context, cfg *config.Config) (string, error) {
 		content := cfg.EffectiveContent(source)
 		if content.Type == "crawl4ai" {
 			service := content.Crawl4AI.EffectiveService(cfg.Services.Content.Crawl4AI)
-			checks[crawlCheck{Service: service, Mode: service.EffectiveMode()}] = struct{}{}
+			check := crawlCheck{Service: service, Mode: service.EffectiveMode()}
+			if _, exists := checks[check]; !exists {
+				checks[check] = source.ID
+				order = append(order, check)
+			}
 		}
 	}
 	if len(checks) == 0 {
 		return "not used", nil
 	}
 	var detail string
-	for check := range checks {
+	for _, check := range order {
 		var err error
 		detail, err = checkCrawl4AIService(ctx, check.Service, check.Mode)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("source %s mode=%s filter=%s: %w", checks[check], check.Mode, check.Service.EffectiveFilter(), err)
 		}
 	}
 	if len(checks) > 1 {
@@ -377,8 +382,20 @@ func checkCrawl4AIService(ctx context.Context, service config.Crawl4AIService, m
 		if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result); err != nil {
 			return "", fmt.Errorf("response: %w", err)
 		}
-		if !result.Success || len(result.Results) != 1 || !result.Results[0].Success || !strings.Contains(strings.ToLower(result.Results[0].HTML), "example domain") {
-			return "", fmt.Errorf("response did not contain expected content")
+		if !result.Success {
+			return "", fmt.Errorf("service reported an unsuccessful crawl")
+		}
+		if len(result.Results) != 1 {
+			return "", fmt.Errorf("expected 1 crawl result, got %d", len(result.Results))
+		}
+		if !result.Results[0].Success {
+			return "", fmt.Errorf("crawl result reported failure")
+		}
+		if strings.TrimSpace(result.Results[0].HTML) == "" {
+			return "", fmt.Errorf("response contained empty HTML")
+		}
+		if !hasExampleDomainContent(result.Results[0].HTML) {
+			return "", fmt.Errorf("HTML did not contain the example.com title or explanatory text")
 		}
 	} else {
 		var result struct {
@@ -388,8 +405,14 @@ func checkCrawl4AIService(ctx context.Context, service config.Crawl4AIService, m
 		if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result); err != nil {
 			return "", fmt.Errorf("response: %w", err)
 		}
-		if !result.Success || !strings.Contains(strings.ToLower(result.Markdown), "example domain") {
-			return "", fmt.Errorf("response did not contain expected content")
+		if !result.Success {
+			return "", fmt.Errorf("service reported an unsuccessful crawl")
+		}
+		if strings.TrimSpace(result.Markdown) == "" {
+			return "", fmt.Errorf("response contained empty Markdown")
+		}
+		if !hasExampleDomainContent(result.Markdown) {
+			return "", fmt.Errorf("Markdown did not contain the example.com title or explanatory text")
 		}
 	}
 	content := service.EffectiveFilter() + " Markdown content"
@@ -400,6 +423,12 @@ func checkCrawl4AIService(ctx context.Context, service config.Crawl4AIService, m
 		return content + " OK via configured proxy", nil
 	}
 	return content + " OK via direct connection", nil
+}
+
+func hasExampleDomainContent(content string) bool {
+	// Markdown extraction may omit the heading and collapse spaces in the body.
+	compact := strings.Join(strings.Fields(strings.ToLower(content)), "")
+	return strings.Contains(compact, "exampledomain") || strings.Contains(compact, "thisdomainisforuseindocumentationexamples")
 }
 
 func checkLLM(ctx context.Context, cfg *config.Config) (string, error) {
