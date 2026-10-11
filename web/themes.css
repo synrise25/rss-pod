@@ -422,7 +422,7 @@
 }
 
 .header-actions .language-switcher a[aria-current="page"] {
-  background: linear-gradient(135deg, #5ba1ff, #3f83f1);
+  background: linear-gradient(135deg, var(--blue-pressed), #225dc5);
   color: #ffffff;
   box-shadow: 0 7px 16px rgb(79 142 247 / 20%), inset 0 1px 0 rgb(255 255 255 / 34%);
 }
