@@ -5,6 +5,8 @@
   <p>
     <a href="README.md">English</a>
     ·
+    <a href="#播客试听">播客试听</a>
+    ·
     <a href="#快速开始">快速开始</a>
     ·
     <a href="#配置">配置参考</a>
@@ -20,6 +22,16 @@
 rss-pod 是一个自托管的 RSS 转播客应用：用兼容 OpenAI 协议的 LLM 整理内容、生成多人对话，
 通过 Edge TTS 或 Azure Speech 合成音频，提供网页播放器和播客 RSS。通勤、开车或散步时，
 戴上耳机就能收听你关心的内容。
+
+## 播客试听
+
+### 五年后，还有多少程序员能靠写代码活着？
+
+**▶ 点击播放并开启声音 — 中文原节目 · 3:28**
+
+[试听英文改编版](README.md#audio-demo)。
+
+https://github.com/user-attachments/assets/df361dd5-dff3-442b-a0c1-803e1b8ad2d1
 
 ![rss-pod 网页播放器](docs/assets/player.png)
 
