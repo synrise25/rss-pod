@@ -904,6 +904,14 @@ input:focus-visible {
   }
 }
 
+@media (max-width: 1200px) {
+  .date-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+}
+
 @media (max-height: 720px) {
   :root {
     --player-height: 156px;
@@ -1023,7 +1031,7 @@ input:focus-visible {
 
   .date-tabs {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
     min-height: 62px;
   }
@@ -1271,15 +1279,18 @@ input:focus-visible {
 .admin-login h2 { margin-top: 0; }
 .admin-login label { display: block; margin-bottom: 8px; font-weight: 600; }
 .admin-login-controls { display: flex; gap: 12px; flex-wrap: wrap; }
-.admin-panel button, #admin-logout, .admin-visibility { padding: 10px 14px; border: 1px solid #bfd2e2; border-radius: 12px; background: #f4f9ff; color: #244560; font: inherit; cursor: pointer; }
+.admin-panel button, #admin-logout, .admin-visibility, .admin-download { padding: 10px 14px; border: 1px solid #bfd2e2; border-radius: 12px; background: #f4f9ff; color: #244560; font: inherit; cursor: pointer; }
 .admin-panel button:disabled, #admin-logout:disabled, .admin-visibility:disabled { opacity: .5; cursor: wait; }
 .admin-panel input { min-width: 0; width: 160px; padding: 10px; font: inherit; font-size: 20px; letter-spacing: .2em; border: 1px solid #bfd2e2; border-radius: 12px; }
-.admin-panel :focus-visible, #admin-logout:focus-visible, .admin-visibility:focus-visible { outline: 3px solid #2584c4; outline-offset: 3px; }
+.admin-panel :focus-visible, #admin-logout:focus-visible, .admin-visibility:focus-visible, .admin-download:focus-visible { outline: 3px solid #2584c4; outline-offset: 3px; }
+.admin-episode-actions { display: flex; align-items: center; justify-self: end; gap: 8px; white-space: nowrap; }
+.admin-download { text-decoration: none; }
 .admin-visibility { color: #244560; border-color: #bfd2e2; background: #f4f9ff; justify-self: end; }
 .episode-row.admin-episode-row { grid-template-columns: 60px minmax(100px, 150px) minmax(0, 1fr) 100px auto; }
 @media (max-width: 700px) {
   .episode-row.admin-episode-row { grid-template-columns: 52px minmax(0, 1fr) auto; grid-template-areas: "play source action" "play title action" "play time action"; }
-  .admin-episode-row .admin-visibility { grid-area: action; font-size: 12px; padding: 8px; }
+  .admin-episode-actions { grid-area: action; flex-direction: column; align-items: stretch; gap: 6px; text-align: center; }
+  .admin-episode-row .admin-visibility, .admin-episode-row .admin-download { font-size: 12px; padding: 8px; }
   .admin-episode-row .episode-time { grid-column: 2; grid-row: 3; justify-self: start; padding-top: 4px; }
   .admin-episode-row .episode-title { padding-right: 8px; }
 }
@@ -1323,7 +1334,7 @@ input:focus-visible {
   display: none;
 }
 
-@media (max-width: 700px) {
+@media (max-width: 1100px) {
   .admin-authenticated .header-heading-row {
     flex-wrap: wrap;
   }
@@ -1331,7 +1342,9 @@ input:focus-visible {
   .admin-authenticated .header-actions {
     margin-left: auto;
   }
+}
 
+@media (max-width: 700px) {
   #admin-logout {
     min-height: 36px;
     padding: 6px 10px;

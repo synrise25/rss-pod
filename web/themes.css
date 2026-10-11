@@ -360,7 +360,7 @@
   background: var(--surface-solid);
 }
 
-:root:not([data-style="glacier"][data-appearance="day"]) :is(.admin-panel button, .admin-panel input, #admin-logout, .admin-visibility, .admin-skipped button, .admin-hidden-badge) {
+:root:not([data-style="glacier"][data-appearance="day"]) :is(.admin-panel button, .admin-panel input, #admin-logout, .admin-visibility, .admin-download, .admin-skipped button, .admin-hidden-badge) {
   border-color: var(--line-strong);
   background: var(--control);
   color: var(--navy);

@@ -44,7 +44,7 @@ const copy = {
     untitled: "Untitled episode",
     durationUnavailable: "Duration unavailable",
     mediaAlbum: "Commute Podcasts",
-    relativeDates: ["Today", "Yesterday", "2 days ago"],
+    relativeDates: ["Today", "Yesterday", "2 days ago", "3 days ago"],
     dateLocale: "en-US",
     greetings: ["Good morning", "Good afternoon", "Good afternoon", "Good evening"],
     greeting: (value) => `${value}. What's worth a listen?`,
@@ -81,7 +81,7 @@ const copy = {
     untitled: "未命名播客",
     durationUnavailable: "暂无播放时长",
     mediaAlbum: "通勤播客",
-    relativeDates: ["今天", "昨天", "前天"],
+    relativeDates: ["今天", "昨天", "前天", "大前天"],
     dateLocale: "zh-CN",
     greetings: ["早上好", "中午好", "下午好", "晚上好"],
     greeting: (value) => `${value}，今天听什么？`,
@@ -94,14 +94,14 @@ const copy = {
 
 const adminCopy = localeKey === "zh-CN" ? {
   login: "管理员登录", code: "验证器动态码", hint: "输入验证器中的 6 位动态码，会话有效期 30 分钟。",
-  skipped: "最近跳过的内容（最多 100 条）", skippedEmpty: "暂无跳过的内容。", refresh: "刷新",
-  logout: "退出管理", hide: "隐藏", restore: "恢复显示", hidden: "已隐藏",
+  skipped: "最近跳过的内容", skippedEmpty: "最近一周暂无跳过的内容。", refresh: "刷新",
+  logout: "退出管理", download: "下载", hide: "隐藏", restore: "恢复显示", hidden: "已隐藏",
   loginError: "动态码无效或已使用，请等待下一组动态码。", rateLimit: "尝试过于频繁，请等待一分钟。",
   expired: "会话已过期，请重新登录。", error: "操作失败，请稍后重试。",
 } : {
   login: "Admin login", code: "Authenticator code", hint: "Enter your 6-digit code. Sessions last 30 minutes.",
-  skipped: "Recently skipped (up to 100)", skippedEmpty: "No skipped content.", refresh: "Refresh",
-  logout: "Sign out", hide: "Hide", restore: "Restore", hidden: "Hidden",
+  skipped: "Recently skipped", skippedEmpty: "No skipped content in the past week.", refresh: "Refresh",
+  logout: "Sign out", download: "Download", hide: "Hide", restore: "Restore", hidden: "Hidden",
   loginError: "Invalid or already used code. Wait for the next code.", rateLimit: "Too many attempts. Wait one minute.",
   expired: "Session expired. Please sign in again.", error: "Operation failed. Please try again.",
 };
@@ -403,6 +403,14 @@ function renderEpisodeList() {
     renderEpisodeDuration(time, episode.durationSeconds);
     if (isAdminPage && adminCSRF) {
       row.classList.add("admin-episode-row");
+      const actions = document.createElement("div");
+      actions.className = "admin-episode-actions";
+      const downloadLink = document.createElement("a");
+      downloadLink.className = "admin-download";
+      downloadLink.href = `/api/v1/admin/episodes/${encodeURIComponent(episode.id)}/download`;
+      downloadLink.download = "";
+      downloadLink.textContent = adminCopy.download;
+      downloadLink.setAttribute("aria-label", `${adminCopy.download}: ${episode.title}`);
       const visibilityButton = document.createElement("button");
       visibilityButton.type = "button";
       visibilityButton.className = "admin-visibility";
@@ -417,7 +425,8 @@ function renderEpisodeList() {
         badge.textContent = adminCopy.hidden;
         title.prepend(badge);
       }
-      row.append(visibilityButton);
+      actions.append(downloadLink, visibilityButton);
+      row.append(actions);
     }
     fragment.append(row);
   }
@@ -765,6 +774,7 @@ function createDateOptions(now = new Date()) {
     { relativeLabel: copy.relativeDates[0], date: today },
     { relativeLabel: copy.relativeDates[1], date: addDays(today, -1) },
     { relativeLabel: copy.relativeDates[2], date: addDays(today, -2) },
+    { relativeLabel: copy.relativeDates[3], date: addDays(today, -3) },
   ].map((option) => ({
     ...option,
     key: dateKey(option.date),
