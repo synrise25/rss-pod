@@ -1,0 +1,669 @@
+/* The original Glacier day theme remains in app.css. */
+:root {
+  --accent: var(--blue);
+  --on-accent-filter: brightness(0) invert(1);
+  --control-filter: var(--blue-icon-filter);
+  --group: var(--surface-blue);
+  --control: var(--surface);
+  --control-hover: var(--surface-blue-strong);
+  --selected: var(--blue-pressed);
+  --on-selected: #ffffff;
+  --panel: #f9fcff;
+  --glass-highlight: rgb(255 255 255 / 72%);
+  --dock-shadow: 0 14px 32px rgb(20 30 28 / 10%);
+  --dock: var(--surface);
+  --current: var(--surface-blue);
+  --track: var(--line);
+  --accent-hover: var(--blue-hover);
+  --accent-pressed: var(--blue-pressed);
+  --play-radius: 50%;
+  --utility-height: 52px;
+  --utility-radius: 14px;
+}
+
+:root[data-style="silver"] {
+  --page: #f0f1ed;
+  --surface-solid: #fafbf9;
+  --surface: rgb(250 251 249 / 92%);
+  --navy: #181d1b;
+  --muted: #555d58;
+  --line: #d9ddd9;
+  --line-strong: #b8bfba;
+  --blue: #303a33;
+  --blue-hover: #1d2a21;
+  --blue-pressed: #18241b;
+  --accent: #c1f349;
+  --accent-hover: #b2e637;
+  --accent-pressed: #a4d830;
+  --on-accent-filter: brightness(0);
+  --control-filter: brightness(0);
+  --surface-blue: #e3e6e2;
+  --surface-blue-strong: #d7dcd6;
+  --group: rgb(216 221 217 / 74%);
+  --control: rgb(226 230 225 / 72%);
+  --control-hover: #d7ddd5;
+  --selected: #343c37;
+  --on-selected: #ffffff;
+  --panel: #f5f6f2;
+  --current: #eaeee6;
+  --track: #d4dad4;
+  --glass-border: #d2d8d2;
+  --dock: rgb(249 250 247 / 91%);
+  --focus: #476418;
+}
+
+:root[data-style="crystal"] {
+  --page: #dfddd7;
+  --surface-solid: #f5f4f0;
+  --surface: rgb(246 245 241 / 92%);
+  --navy: #252523;
+  --muted: #5b5e57;
+  --line: #d4d2cb;
+  --line-strong: #b4b3ab;
+  --blue: #a63716;
+  --blue-hover: #902c0f;
+  --blue-pressed: #7e260d;
+  --accent: #f8633b;
+  --accent-hover: #ee582f;
+  --accent-pressed: #e04b23;
+  --on-accent-filter: brightness(0);
+  --control-filter: brightness(0);
+  --surface-blue: #e6e2db;
+  --surface-blue-strong: #d9d4ca;
+  --group: rgb(241 238 231 / 58%);
+  --control: rgb(245 243 237 / 64%);
+  --control-hover: #e5e0d7;
+  --selected: #30322e;
+  --on-selected: #ffffff;
+  --panel: #f0eee8;
+  --current: #f8e6dd;
+  --track: #c8c8c1;
+  --glass-border: rgb(255 255 255 / 90%);
+  --dock: rgb(246 244 238 / 84%);
+  --glass-highlight: rgb(255 255 255 / 88%);
+  --dock-shadow: 0 12px 28px rgb(46 39 30 / 13%), inset 0 2px 3px var(--glass-highlight), inset 0 -3px 8px rgb(86 77 62 / 8%);
+  --focus: #8f3011;
+  --play-radius: 28%;
+}
+
+:root[data-appearance="night"] {
+  color-scheme: dark;
+  --surface-solid: #202622;
+  --surface: rgb(32 38 34 / 96%);
+  --navy: #eff3ed;
+  --muted: #b5bfb5;
+  --line: #39423a;
+  --line-strong: #687366;
+  --blue: #c1f349;
+  --blue-hover: #d0ff65;
+  --blue-pressed: #ade22f;
+  --surface-blue: #303a2e;
+  --surface-blue-strong: #414e3c;
+  --group: rgb(42 50 43 / 86%);
+  --control: rgb(54 63 53 / 76%);
+  --control-hover: #485443;
+  --control-filter: brightness(0) invert(1);
+  --selected: #c1f349;
+  --on-selected: #182016;
+  --panel: #222922;
+  --current: #303a29;
+  --track: #465140;
+  --glass-border: #535f4b;
+  --glass-highlight: rgb(232 247 218 / 14%);
+  --dock: rgb(35 43 34 / 94%);
+  --dock-shadow: 0 12px 28px rgb(0 0 0 / 24%), inset 0 1px 0 var(--glass-highlight);
+  --focus: #d2f680;
+}
+
+:root[data-style="silver"][data-appearance="night"] {
+  --page: #141817;
+}
+
+:root[data-style="crystal"][data-appearance="night"] {
+  --page: #1c1917;
+  --surface-solid: #2a2521;
+  --surface: rgb(42 37 33 / 96%);
+  --line: #484039;
+  --line-strong: #77695d;
+  --muted: #c9bcb0;
+  --blue: #ffad8b;
+  --blue-hover: #ffc1a5;
+  --blue-pressed: #ff9c73;
+  --surface-blue: #42322a;
+  --surface-blue-strong: #554035;
+  --group: rgb(58 49 41 / 84%);
+  --control: rgb(66 55 45 / 82%);
+  --control-hover: #574437;
+  --selected: #ffad8b;
+  --on-selected: #281d15;
+  --panel: #302820;
+  --current: #453027;
+  --track: #635044;
+  --glass-border: #89715d;
+  --dock: rgb(53 43 34 / 92%);
+  --glass-highlight: rgb(255 222 191 / 20%);
+  --focus: #ffd1b3;
+}
+
+:root[data-style="glacier"][data-appearance="night"] {
+  --page: #101b2a;
+  --surface-solid: #1c2b3e;
+  --surface: rgb(28 43 62 / 96%);
+  --muted: #b2c3d9;
+  --line: #32465e;
+  --line-strong: #5b7391;
+  --blue: #9dc5ff;
+  --blue-hover: #bad8ff;
+  --blue-pressed: #82b5fb;
+  --accent: #87b7fa;
+  --accent-hover: #9cc5fc;
+  --accent-pressed: #72a7ed;
+  --on-accent-filter: brightness(0);
+  --surface-blue: #263e5a;
+  --surface-blue-strong: #355475;
+  --group: rgb(36 56 81 / 84%);
+  --control: rgb(48 70 96 / 84%);
+  --control-hover: #3d5a7d;
+  --selected: #9dc5ff;
+  --on-selected: #122135;
+  --panel: #1c2c42;
+  --current: #263e5a;
+  --track: #465f7c;
+  --glass-border: #536c89;
+  --dock: rgb(31 48 71 / 94%);
+  --glass-highlight: rgb(207 228 255 / 18%);
+  --focus: #9ddfd5;
+}
+
+/* Restyle the two new palettes and the original palette's night appearance. */
+:root:not([data-style="glacier"][data-appearance="day"]) {
+  /* Some head units provide only a regular CJK font. Keep headings legible. */
+  font-synthesis: weight;
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) body {
+  background: var(--page);
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) :is(.page-header, .source-filter-section) {
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) :is(.source-filters, .speed-control) {
+  border-color: var(--line);
+  background: var(--group);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) :is(.source-filter[aria-pressed="true"], .speed-control button[aria-pressed="true"]) {
+  background: var(--selected);
+  color: var(--on-selected);
+  box-shadow: none;
+}
+
+:root[data-style="crystal"][data-appearance="day"] .source-filter[aria-pressed="true"] {
+  background: rgb(255 255 255 / 62%);
+  color: var(--navy);
+  box-shadow: inset 0 0 0 1px var(--glass-highlight), 0 2px 8px rgb(45 37 25 / 7%);
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) :is(.source-filter:hover:not([aria-pressed="true"]), .speed-control button:hover:not([aria-pressed="true"])) {
+  background: var(--control-hover);
+  color: var(--navy);
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) .date-tab[aria-selected="true"] {
+  color: var(--navy);
+}
+
+:root:is([data-style="silver"], [data-style="crystal"])[data-appearance] .date-tab:hover {
+  background: transparent;
+  color: var(--focus);
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) .date-tab[aria-selected="true"]::after {
+  background: var(--accent);
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) .date-count {
+  border-color: var(--line);
+  background: var(--control);
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) .episode-row {
+  background: var(--surface-solid);
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) .episode-row:hover {
+  background: var(--surface-blue);
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) .episode-row.is-current {
+  background: var(--current);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) .episode-row.is-current::before {
+  position: absolute;
+  display: block;
+  top: 10px;
+  bottom: 10px;
+  left: 0;
+  width: 4px;
+  border-radius: 4px;
+  background: var(--accent);
+  content: "";
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) .episode-source {
+  color: var(--muted);
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) :is(.episode-play-button, .icon-button-secondary) {
+  border-color: var(--line);
+  background: var(--control);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) :is(.episode-play-button, .icon-button-secondary) img {
+  filter: var(--control-filter);
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) :is(.episode-play-button:hover, .icon-button-secondary:hover:not(:disabled)) {
+  border-color: var(--line-strong);
+  background: var(--control-hover);
+  box-shadow: none;
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) :is(.icon-button-primary, .episode-row.is-playing .episode-play-button) {
+  border-color: transparent;
+  background: var(--accent);
+  box-shadow: none;
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) :is(.icon-button-primary, .episode-row.is-playing .episode-play-button) img {
+  filter: var(--on-accent-filter);
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) :is(.icon-button-primary:hover:not(:disabled), .episode-row.is-playing .episode-play-button:hover) {
+  background: var(--accent-hover);
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) :is(.icon-button-primary:active:not(:disabled), .episode-row.is-playing .episode-play-button:active) {
+  background: var(--accent-pressed);
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) :is(.episode-play-button, .icon-button-primary) {
+  border-radius: var(--play-radius);
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) .player-dock {
+  border-color: var(--glass-border);
+  border-radius: 26px;
+  background: var(--dock);
+  box-shadow: var(--dock-shadow);
+  backdrop-filter: blur(14px);
+}
+
+:root[data-style="crystal"][data-appearance] :is(.episode-row.is-playing .episode-play-button, .episode-play-button, .icon-button-secondary, .icon-button-primary) {
+  border: 1px solid var(--glass-border);
+  box-shadow: inset 0 2px 3px var(--glass-highlight), inset 0 -2px 5px rgb(54 42 26 / 9%), 0 3px 8px rgb(25 20 14 / 8%);
+}
+
+:root[data-style="crystal"][data-appearance] :is(.source-filters, .speed-control) {
+  border-color: var(--glass-border);
+  box-shadow: inset 0 2px 3px var(--glass-highlight), 0 4px 12px rgb(25 20 14 / 7%);
+  backdrop-filter: blur(10px);
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) .progress::-webkit-slider-runnable-track {
+  background: linear-gradient(to right, var(--accent) 0, var(--accent) var(--progress-value), var(--track) var(--progress-value), var(--track) 100%);
+  box-shadow: none;
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) .progress::-webkit-slider-thumb {
+  border-color: var(--surface-solid);
+  background: var(--accent);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 15%);
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) .progress::-moz-range-track {
+  background: var(--track);
+  box-shadow: none;
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) .progress::-moz-range-progress,
+:root:not([data-style="glacier"][data-appearance="day"]) .progress::-moz-range-thumb {
+  background: var(--accent);
+  border-color: var(--surface-solid);
+  box-shadow: none;
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) .notice-content {
+  border-color: var(--line-strong);
+  background: var(--surface-solid);
+  color: var(--navy);
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) :is(.notice-dismiss, .notice-content code, .notice-content pre) {
+  border-color: var(--line-strong);
+  background: var(--control);
+  color: var(--navy);
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) :is(.admin-login, .admin-skipped) {
+  border-color: var(--line-strong);
+  background: var(--surface-solid);
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) :is(.admin-panel button, .admin-panel input, #admin-logout, .admin-visibility, .admin-skipped button, .admin-hidden-badge) {
+  border-color: var(--line-strong);
+  background: var(--control);
+  color: var(--navy);
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) :is(.admin-skipped summary, .admin-skipped small) {
+  color: var(--muted);
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) .admin-skipped li {
+  border-color: var(--line);
+}
+
+:root:not([data-style="glacier"][data-appearance="day"]) .episode-row.is-hidden {
+  background: var(--surface-blue);
+}
+
+.header-actions :is(.theme-button, .language-switcher, .github-link), .theme-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  height: var(--utility-height);
+  min-height: var(--utility-height);
+  border: 1px solid var(--line);
+  border-radius: var(--utility-radius);
+  background: var(--control);
+  color: var(--navy);
+  box-shadow: none;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.theme-button, .theme-close {
+  padding: 8px 18px;
+  cursor: pointer;
+}
+
+.header-actions .github-link {
+  width: var(--utility-height);
+}
+
+.header-actions .language-switcher {
+  padding: 4px;
+}
+
+.header-actions .language-switcher a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 54px;
+  height: calc(var(--utility-height) - 10px);
+  padding: 6px 12px;
+  border-radius: calc(var(--utility-radius) - 4px);
+  color: var(--muted);
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.header-actions .language-switcher a[aria-current="page"] {
+  background: var(--selected);
+  color: var(--on-selected);
+  box-shadow: none;
+}
+
+.header-actions :is(.theme-button:hover, .github-link:hover), .theme-close:hover,
+.header-actions .language-switcher a:hover:not([aria-current="page"]) {
+  border-color: var(--line);
+  background: var(--control-hover);
+  color: var(--navy);
+}
+
+#github-link img {
+  filter: brightness(0);
+}
+
+:root[data-appearance="night"] #github-link img {
+  filter: brightness(0) invert(1);
+}
+
+.theme-dialog {
+  position: fixed;
+  z-index: 10;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgb(0 0 0 / 40%);
+}
+
+.theme-panel {
+  width: min(100%, 620px);
+  max-height: calc(100dvh - 40px);
+  padding: 26px;
+  overflow-y: auto;
+  border: 1px solid var(--glass-border);
+  border-radius: 26px;
+  background: var(--panel);
+  color: var(--navy);
+  box-shadow: 0 20px 60px rgb(0 0 0 / 20%);
+}
+
+.theme-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.theme-panel h2 {
+  margin: 0;
+  font-size: 26px;
+  letter-spacing: -0.03em;
+}
+
+.theme-options {
+  min-width: 0;
+  margin: 0 0 22px;
+  padding: 0;
+  border: 0;
+}
+
+.theme-options:last-child {
+  margin-bottom: 0;
+}
+
+.theme-options legend {
+  margin-bottom: 10px;
+  padding: 0;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.theme-choices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.theme-choices label {
+  position: relative;
+  min-width: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.theme-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-height: 110px;
+  padding: 16px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--utility-radius);
+  background: var(--control);
+  color: var(--navy);
+  font-size: 16px;
+  font-weight: 650;
+  text-align: center;
+}
+
+.theme-choice:hover {
+  background: var(--control-hover);
+}
+
+.theme-choices input:checked + .theme-choice {
+  border-color: var(--selected);
+  background: var(--selected);
+  color: var(--on-selected);
+}
+
+.theme-choices input:focus-visible + .theme-choice {
+  outline: 4px solid var(--focus);
+  outline-offset: 3px;
+}
+
+.theme-swatch {
+  display: flex;
+  gap: 6px;
+}
+
+.theme-swatch i {
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgb(0 0 0 / 16%);
+  border-radius: 50%;
+}
+
+.theme-swatch[data-swatch="silver"] i:nth-child(1) { background: #f0f1ed; }
+.theme-swatch[data-swatch="silver"] i:nth-child(2) { background: #343c37; }
+.theme-swatch[data-swatch="silver"] i:nth-child(3) { background: #c1f349; }
+.theme-swatch[data-swatch="crystal"] i:nth-child(1) { background: #dfddd7; }
+.theme-swatch[data-swatch="crystal"] i:nth-child(2) { background: #30322e; }
+.theme-swatch[data-swatch="crystal"] i:nth-child(3) { background: #f8633b; }
+.theme-swatch[data-swatch="glacier"] i:nth-child(1) { background: #f4f9ff; }
+.theme-swatch[data-swatch="glacier"] i:nth-child(2) { background: #10233f; }
+.theme-swatch[data-swatch="glacier"] i:nth-child(3) { background: #4f8ef7; }
+
+.theme-mode-choices .theme-choice {
+  min-height: 60px;
+  padding-block: 12px;
+}
+
+@media (min-width: 701px) {
+  :root:not([data-style="glacier"][data-appearance="day"]) .episode-title {
+    font-size: clamp(20px, 1.65vw, 25px);
+    font-weight: 650;
+  }
+
+  :root:not([data-style="glacier"][data-appearance="day"]) .episode-source {
+    font-size: clamp(18px, 1.4vw, 21px);
+  }
+
+  :root:not([data-style="glacier"][data-appearance="day"]) .now-playing-title {
+    display: block;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  :root:not([data-style="glacier"][data-appearance="day"]) .icon-button-primary {
+    width: 84px;
+    height: 84px;
+  }
+
+  :root:not([data-style="glacier"][data-appearance="day"]) .icon-button-secondary {
+    width: 60px;
+    height: 60px;
+  }
+
+  :root:not([data-style="glacier"][data-appearance="day"]) .episode-play-button {
+    width: 58px;
+    height: 58px;
+  }
+
+  :root:not([data-style="glacier"][data-appearance="day"]) .transport-controls {
+    gap: 12px;
+  }
+}
+
+@media (min-width: 701px) and (max-height: 720px) {
+  :root:not([data-style="glacier"][data-appearance="day"]) {
+    --player-height: 136px;
+  }
+}
+
+@media (max-width: 700px) {
+  :root {
+    --utility-height: 44px;
+  }
+
+  .header-heading-row {
+    flex-wrap: wrap;
+  }
+
+  .page-header h1 {
+    flex-basis: 100%;
+  }
+
+  .header-actions {
+    gap: 8px;
+  }
+
+  .theme-button {
+    padding: 8px 14px;
+  }
+
+  .theme-dialog {
+    padding: 12px;
+  }
+
+  .theme-panel {
+    max-height: calc(100dvh - 24px);
+    padding: 20px 14px;
+    border-radius: 20px;
+  }
+
+  .theme-panel h2 {
+    font-size: 24px;
+  }
+
+  .theme-choices {
+    gap: 6px;
+  }
+
+  .theme-choice {
+    min-height: 102px;
+    padding-inline: 5px;
+  }
+
+  .theme-swatch {
+    gap: 4px;
+  }
+
+  .theme-swatch i {
+    width: 20px;
+    height: 20px;
+  }
+
+  :root:not([data-style="glacier"][data-appearance="day"]) .player-dock {
+    border-radius: 18px;
+  }
+}

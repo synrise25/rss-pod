@@ -158,6 +158,11 @@ retries do not change it. Set the timezone with `defaults.schedule.timezone`.
 The player opens the latest date with playable episodes and preloads the next
 episode to reduce switching delays. Preloading lasts only for the current page.
 
+Use **Theme** in the top-right corner to choose Silver Signal, Smoked Crystal,
+or the original Glacier style, with day, night, or system appearance. The default
+is Silver Signal in day mode. Preferences are saved in the current browser and
+retained after refreshes and language changes.
+
 ### Admin page
 
 Sign in at `/admin` to hide or restore episodes and inspect recently skipped

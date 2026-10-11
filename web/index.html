@@ -1,14 +1,16 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-style="silver" data-appearance="day">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#f4f9ff" />
+    <meta name="theme-color" content="#f0f1ed" />
     <meta name="color-scheme" content="light" />
     <title>Commute Podcasts</title>
     <link rel="icon" type="image/png" href="/icons/favicon.png" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <script src="/theme.js"></script>
     <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/themes.css" />
     <script type="module" src="/app.js"></script>
   </head>
   <body>
@@ -17,6 +19,7 @@
         <div class="header-heading-row">
           <h1 id="greeting">What's worth a listen?</h1>
           <div class="header-actions">
+            <button id="theme-button" class="theme-button" type="button" aria-controls="theme-dialog" aria-haspopup="dialog" aria-expanded="false" data-theme-copy="button">Theme</button>
             <nav id="language-switcher" class="language-switcher" aria-label="Language">
               <a href="/en" data-locale="en" aria-current="page">EN</a>
               <a href="/zh-cn" data-locale="zh-CN">中文</a>
@@ -105,6 +108,49 @@
         <audio id="audio" preload="metadata"></audio>
       </section>
     </main>
+
+    <div id="theme-dialog" class="theme-dialog" hidden>
+      <section class="theme-panel" role="dialog" aria-modal="true" aria-labelledby="theme-title">
+        <div class="theme-panel-heading">
+          <h2 id="theme-title" data-theme-copy="title">Appearance</h2>
+          <button id="theme-close" class="theme-close" type="button" data-theme-copy="close">Done</button>
+        </div>
+        <fieldset class="theme-options">
+          <legend data-theme-copy="style">Style</legend>
+          <div class="theme-choices">
+            <label>
+              <input class="visually-hidden" type="radio" name="theme-style" value="silver" checked />
+              <span class="theme-choice">
+                <span class="theme-swatch" data-swatch="silver" aria-hidden="true"><i></i><i></i><i></i></span>
+                <span data-theme-copy="silver">Silver Signal</span>
+              </span>
+            </label>
+            <label>
+              <input class="visually-hidden" type="radio" name="theme-style" value="crystal" />
+              <span class="theme-choice">
+                <span class="theme-swatch" data-swatch="crystal" aria-hidden="true"><i></i><i></i><i></i></span>
+                <span data-theme-copy="crystal">Smoked Crystal</span>
+              </span>
+            </label>
+            <label>
+              <input class="visually-hidden" type="radio" name="theme-style" value="glacier" />
+              <span class="theme-choice">
+                <span class="theme-swatch" data-swatch="glacier" aria-hidden="true"><i></i><i></i><i></i></span>
+                <span data-theme-copy="glacier">Glacier · Original</span>
+              </span>
+            </label>
+          </div>
+        </fieldset>
+        <fieldset class="theme-options">
+          <legend data-theme-copy="mode">Day & night</legend>
+          <div class="theme-choices theme-mode-choices">
+            <label><input class="visually-hidden" type="radio" name="theme-mode" value="day" checked /><span class="theme-choice" data-theme-copy="day">Day</span></label>
+            <label><input class="visually-hidden" type="radio" name="theme-mode" value="night" /><span class="theme-choice" data-theme-copy="night">Night</span></label>
+            <label><input class="visually-hidden" type="radio" name="theme-mode" value="auto" /><span class="theme-choice" data-theme-copy="auto">System</span></label>
+          </div>
+        </fieldset>
+      </section>
+    </div>
 
     <template id="episode-row-template">
       <article class="episode-row" role="listitem">
