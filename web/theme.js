@@ -63,14 +63,10 @@
       button: "主题", title: "主题与外观", close: "完成", style: "外观风格",
       silver: "银雾信号", crystal: "烟晶玻璃", glacier: "冰川 · 原版",
       mode: "日间与夜间", day: "日间", night: "夜间", auto: "跟随系统",
-      schedule: "跟随系统：系统切换深浅色外观时，界面同步切换。",
-      local: "选择后立即生效，设置保存在当前浏览器。",
     } : {
       button: "Theme", title: "Appearance", close: "Done", style: "Style",
       silver: "Silver Signal", crystal: "Smoked Crystal", glacier: "Glacier · Original",
       mode: "Day & night", day: "Day", night: "Night", auto: "System",
-      schedule: "System: appearance follows your device’s light or dark setting.",
-      local: "Changes apply immediately and are saved in this browser.",
     };
     for (const element of document.querySelectorAll("[data-theme-copy]")) {
       element.textContent = copy[element.dataset.themeCopy];

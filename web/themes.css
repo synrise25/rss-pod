@@ -6,7 +6,7 @@
   --group: var(--surface-blue);
   --control: var(--surface);
   --control-hover: var(--surface-blue-strong);
-  --selected: var(--blue);
+  --selected: var(--blue-pressed);
   --on-selected: #ffffff;
   --panel: #f9fcff;
   --glass-highlight: rgb(255 255 255 / 72%);
@@ -17,6 +17,8 @@
   --accent-hover: var(--blue-hover);
   --accent-pressed: var(--blue-pressed);
   --play-radius: 50%;
+  --utility-height: 52px;
+  --utility-radius: 14px;
 }
 
 :root[data-style="silver"] {
@@ -189,35 +191,36 @@
   backdrop-filter: none;
 }
 
-:root:not([data-style="glacier"][data-appearance="day"]) :is(.language-switcher, .github-link, .source-filters, .speed-control) {
+:root:not([data-style="glacier"][data-appearance="day"]) :is(.source-filters, .speed-control) {
   border-color: var(--line);
   background: var(--group);
   box-shadow: inset 0 1px 0 var(--glass-highlight);
 }
 
-:root:not([data-style="glacier"][data-appearance="day"]) .github-link img {
-  filter: var(--control-filter);
-}
-
-:root:not([data-style="glacier"][data-appearance="day"]) :is(.language-switcher a[aria-current="page"], .source-filter[aria-pressed="true"], .speed-control button[aria-pressed="true"]) {
+:root:not([data-style="glacier"][data-appearance="day"]) :is(.source-filter[aria-pressed="true"], .speed-control button[aria-pressed="true"]) {
   background: var(--selected);
   color: var(--on-selected);
   box-shadow: none;
 }
 
-:root[data-style="crystal"][data-appearance="day"] :is(.source-filter[aria-pressed="true"], .language-switcher a[aria-current="page"]) {
+:root[data-style="crystal"][data-appearance="day"] .source-filter[aria-pressed="true"] {
   background: rgb(255 255 255 / 62%);
   color: var(--navy);
   box-shadow: inset 0 0 0 1px var(--glass-highlight), 0 2px 8px rgb(45 37 25 / 7%);
 }
 
-:root:not([data-style="glacier"][data-appearance="day"]) :is(.language-switcher a:hover:not([aria-current="page"]), .github-link:hover, .source-filter:hover:not([aria-pressed="true"]), .speed-control button:hover:not([aria-pressed="true"]), .date-tab:hover) {
+:root:not([data-style="glacier"][data-appearance="day"]) :is(.source-filter:hover:not([aria-pressed="true"]), .speed-control button:hover:not([aria-pressed="true"])) {
   background: var(--control-hover);
   color: var(--navy);
 }
 
 :root:not([data-style="glacier"][data-appearance="day"]) .date-tab[aria-selected="true"] {
   color: var(--navy);
+}
+
+:root:is([data-style="silver"], [data-style="crystal"])[data-appearance] .date-tab:hover {
+  background: transparent;
+  color: var(--focus);
 }
 
 :root:not([data-style="glacier"][data-appearance="day"]) .date-tab[aria-selected="true"]::after {
@@ -375,19 +378,67 @@
   background: var(--surface-blue);
 }
 
-.theme-button, .theme-close {
-  min-height: 52px;
-  padding: 8px 18px;
-  border: 1px solid var(--line-strong);
-  border-radius: 14px;
+.header-actions :is(.theme-button, .language-switcher, .github-link), .theme-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  height: var(--utility-height);
+  min-height: var(--utility-height);
+  border: 1px solid var(--line);
+  border-radius: var(--utility-radius);
   background: var(--control);
   color: var(--navy);
+  box-shadow: none;
+  font-size: 16px;
   font-weight: 650;
+}
+
+.theme-button, .theme-close {
+  padding: 8px 18px;
   cursor: pointer;
 }
 
-.theme-button:hover, .theme-close:hover {
+.header-actions .github-link {
+  width: var(--utility-height);
+}
+
+.header-actions .language-switcher {
+  padding: 4px;
+}
+
+.header-actions .language-switcher a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 54px;
+  height: calc(var(--utility-height) - 10px);
+  padding: 6px 12px;
+  border-radius: calc(var(--utility-radius) - 4px);
+  color: var(--muted);
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.header-actions .language-switcher a[aria-current="page"] {
+  background: var(--selected);
+  color: var(--on-selected);
+  box-shadow: none;
+}
+
+.header-actions :is(.theme-button:hover, .github-link:hover), .theme-close:hover,
+.header-actions .language-switcher a:hover:not([aria-current="page"]) {
+  border-color: var(--line);
   background: var(--control-hover);
+  color: var(--navy);
+}
+
+#github-link img {
+  filter: brightness(0);
+}
+
+:root[data-appearance="night"] #github-link img {
+  filter: brightness(0) invert(1);
 }
 
 .theme-dialog {
@@ -434,6 +485,10 @@
   border: 0;
 }
 
+.theme-options:last-child {
+  margin-bottom: 0;
+}
+
 .theme-options legend {
   margin-bottom: 10px;
   padding: 0;
@@ -462,8 +517,8 @@
   gap: 14px;
   min-height: 110px;
   padding: 16px 8px;
-  border: 2px solid var(--line);
-  border-radius: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--utility-radius);
   background: var(--control);
   color: var(--navy);
   font-size: 16px;
@@ -476,8 +531,9 @@
 }
 
 .theme-choices input:checked + .theme-choice {
-  border-color: var(--blue);
-  background: var(--surface-blue);
+  border-color: var(--selected);
+  background: var(--selected);
+  color: var(--on-selected);
 }
 
 .theme-choices input:focus-visible + .theme-choice {
@@ -510,13 +566,6 @@
 .theme-mode-choices .theme-choice {
   min-height: 60px;
   padding-block: 12px;
-}
-
-.theme-note {
-  margin: 12px 0 0;
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.6;
 }
 
 @media (min-width: 701px) {
@@ -562,6 +611,10 @@
 }
 
 @media (max-width: 700px) {
+  :root {
+    --utility-height: 44px;
+  }
+
   .header-heading-row {
     flex-wrap: wrap;
   }
@@ -575,7 +628,6 @@
   }
 
   .theme-button {
-    min-height: 44px;
     padding: 8px 14px;
   }
 
@@ -600,7 +652,6 @@
   .theme-choice {
     min-height: 102px;
     padding-inline: 5px;
-    font-size: 14px;
   }
 
   .theme-swatch {
