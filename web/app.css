@@ -926,6 +926,10 @@ input:focus-visible {
     min-width: 0;
   }
 
+  .app-shell {
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+  }
+
   .page-header,
   .source-filter-section,
   .episode-region,
@@ -971,28 +975,63 @@ input:focus-visible {
   }
 
   .date-tabs {
-    gap: 6px;
-    min-height: 44px;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    min-height: 58px;
+    margin-top: 4px;
   }
 
   .date-tab {
-    flex-direction: row;
+    display: grid;
+    grid-template-areas: "relative count" "date date";
+    grid-template-columns: auto auto;
+    grid-template-rows: 20px 14px;
     align-items: center;
-    justify-content: flex-start;
-    gap: 3px;
-    width: auto;
-    min-height: 44px;
-    height: 44px;
-    padding: 5px 0 9px;
+    justify-content: center;
+    align-content: center;
+    gap: 4px 3px;
+    width: 100%;
+    min-height: 58px;
+    height: 58px;
+    padding: 8px 2px 12px;
     overflow: hidden;
-    font-size: clamp(12px, 3.5vw, 15px);
+    font-size: clamp(12px, 3.6vw, 15px);
     line-height: 1.15;
   }
 
   .date-tab > span:first-child {
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    display: contents;
+  }
+
+  .date-relative-label,
+  .date-relative-compact {
+    grid-area: relative;
+  }
+
+  .date-month-day {
+    grid-area: date;
+    justify-self: start;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  .date-count {
+    grid-area: count;
+  }
+
+  .date-tabs:is([data-density="compact"], [data-density="short"]) .date-tab {
+    grid-template-areas: "relative count";
+    grid-template-rows: 20px;
+  }
+
+  html:lang(en) .date-relative-label {
+    display: none;
+  }
+
+  html:lang(en) .date-relative-compact {
+    display: inline;
   }
 
   .date-count {
@@ -1109,10 +1148,10 @@ input:focus-visible {
       "now now"
       "transport speed";
     grid-template-columns: auto minmax(0, 1fr);
-    gap: 6px 8px;
+    gap: 10px clamp(4px, calc(10vw - 28px), 14px);
     width: calc(100% - 16px);
-    margin: var(--section-gap) 8px calc(8px + env(safe-area-inset-bottom));
-    padding: 8px 10px;
+    margin: var(--section-gap) auto calc(8px + env(safe-area-inset-bottom));
+    padding: 12px clamp(10px, 3.4vw, 14px);
     border-radius: 16px;
   }
 
@@ -1130,21 +1169,25 @@ input:focus-visible {
   }
 
   .now-playing-title {
-    margin: 2px 0;
+    display: block;
+    margin: 4px 0 2px;
     font-size: 16px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
 
   .progress-row {
-    grid-template-columns: minmax(0, 1fr) 82px;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 10px;
   }
 
   .progress {
-    height: 32px;
+    height: 28px;
   }
 
   .time-readout {
-    font-size: 13px;
+    gap: 10px;
+    font-size: 12px;
   }
 
   .icon-button img {
@@ -1153,18 +1196,19 @@ input:focus-visible {
   }
 
   .icon-button-primary {
-    width: 58px;
-    height: 58px;
+    width: 52px;
+    height: 52px;
   }
 
   .icon-button-primary img {
-    width: 34px;
-    height: 34px;
+    width: 30px;
+    height: 30px;
   }
 
   .icon-button-secondary {
-    width: 44px;
-    height: 44px;
+    width: 40px;
+    min-height: 40px;
+    height: 40px;
     border-radius: 11px;
   }
 
@@ -1172,6 +1216,9 @@ input:focus-visible {
     grid-area: speed;
     align-self: center;
     justify-self: end;
+    width: 160px;
+    min-width: 0;
+    max-width: 100%;
   }
 
   .speed-label {
@@ -1180,19 +1227,57 @@ input:focus-visible {
 
   .speed-control {
     justify-content: flex-end;
-    width: max-content;
-    gap: 3px;
+    width: 100%;
+    max-width: 100%;
+    min-inline-size: 0;
+    gap: 2px;
     padding: 3px;
     border-radius: 11px;
   }
 
   .speed-control button {
-    min-width: 45px;
-    min-height: 44px;
-    height: 44px;
-    padding: 6px 5px;
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 40px;
+    height: 40px;
+    padding: 6px 2px;
     border-radius: 8px;
     font-size: 14px;
+  }
+}
+
+@media (max-width: 700px) and (orientation: landscape) {
+  .page-header .header-heading-row h1 {
+    flex: 1 1 0;
+    min-width: 0;
+    font-size: 24px;
+  }
+
+  .date-tabs {
+    width: max-content;
+    max-width: 100%;
+    min-height: 48px;
+    grid-template-columns: repeat(4, minmax(76px, max-content));
+    gap: 16px;
+  }
+
+  .date-tab {
+    height: 48px;
+    min-height: 48px;
+    grid-template-rows: 20px 12px;
+    gap: 3px;
+    padding: 4px 6px 6px;
+  }
+
+  .player-dock {
+    padding-block: 6px;
+    row-gap: 6px;
+  }
+
+  .admin-skipped:not([open]) {
+    padding: 6px 10px;
+    margin-bottom: 6px;
+    font-size: 12px;
   }
 }
 

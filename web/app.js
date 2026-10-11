@@ -351,7 +351,8 @@ function fitDateTabs() {
   // Keep the full dates until their actual text and counts no longer fit.
   for (const density of ["full", "compact", "short"]) {
     elements.dateTabs.dataset.density = density;
-    if (elements.dateTabs.scrollWidth <= elements.dateTabs.clientWidth + 1) break;
+    const buttonsFit = [...elements.dateTabs.children].every((button) => button.scrollWidth <= button.clientWidth + 1);
+    if (buttonsFit && elements.dateTabs.scrollWidth <= elements.dateTabs.clientWidth + 1) break;
   }
 }
 
