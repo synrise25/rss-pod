@@ -17,9 +17,9 @@
   --focus: #0f766e;
   --glass-border: rgb(157 200 241 / 58%);
   --blue-icon-filter: invert(55%) sepia(78%) saturate(2636%) hue-rotate(196deg) brightness(100%) contrast(95%);
-  --player-height: 186px;
+  --player-height: clamp(170px, 13vw, 186px);
   --section-gap: 8px;
-  --content-padding: clamp(20px, 2.2vw, 36px);
+  --content-padding: clamp(14px, 2.2vw, 36px);
   background: var(--page);
   color: var(--navy);
   font-synthesis: none;
@@ -39,7 +39,7 @@ body {
 }
 
 body {
-  min-width: 720px;
+  min-width: 0;
   background:
     radial-gradient(circle at 86% -10%, rgb(155 226 255 / 32%), transparent 34%),
     radial-gradient(circle at 4% 96%, rgb(178 212 255 / 24%), transparent 30%),
@@ -198,7 +198,8 @@ input:focus-visible {
 }
 
 .page-header {
-  padding: 24px var(--content-padding) 0;
+  min-width: 0;
+  padding: clamp(18px, 1.67vw, 24px) var(--content-padding) 0;
   border-bottom: 1px solid var(--line);
   background: rgb(255 255 255 / 70%);
   box-shadow: 0 10px 36px rgb(59 130 246 / 4%);
@@ -218,7 +219,7 @@ input:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 24px;
-  margin-bottom: 18px;
+  margin-bottom: clamp(14px, 1.25vw, 18px);
 }
 
 .header-actions {
@@ -298,16 +299,23 @@ input:focus-visible {
 .date-tabs {
   display: flex;
   align-items: stretch;
-  gap: clamp(12px, 2vw, 24px);
+  min-width: 0;
+  gap: clamp(6px, 1.2vw, 18px);
   min-height: 66px;
   border-bottom: 0;
 }
 
 .date-relative-compact { display: none; }
 
+.date-tabs[data-density="compact"] .date-month-day,
+.date-tabs[data-density="short"] .date-month-day,
+.date-tabs[data-density="short"] .date-relative-label { display: none; }
+.date-tabs[data-density="short"] .date-relative-compact { display: inline; }
+
 .date-tab {
   position: relative;
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: flex-start;
   gap: 10px;
@@ -319,7 +327,7 @@ input:focus-visible {
   background: transparent;
   color: var(--navy);
   cursor: pointer;
-  font-size: clamp(20px, 1.8vw, 27px);
+  font-size: 22px;
   font-weight: 600;
   white-space: nowrap;
 }
@@ -371,7 +379,8 @@ input:focus-visible {
 .source-filter-section {
   display: flex;
   align-items: center;
-  gap: 20px;
+  min-width: 0;
+  gap: clamp(8px, 1.4vw, 20px);
   padding: 12px var(--content-padding);
   border-bottom: 1px solid var(--line);
   background: rgb(255 255 255 / 54%);
@@ -383,10 +392,13 @@ input:focus-visible {
   color: var(--muted);
   font-size: 15px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .source-filters {
   display: flex;
+  flex: 0 1 auto;
+  width: max-content;
   min-width: 0;
   gap: 6px;
   padding: 4px;
@@ -412,7 +424,7 @@ input:focus-visible {
   background: transparent;
   color: var(--navy);
   cursor: pointer;
-  font-size: clamp(17px, 1.45vw, 22px);
+  font-size: 19px;
   font-weight: 600;
   white-space: nowrap;
 }
@@ -448,11 +460,11 @@ input:focus-visible {
 .episode-row {
   position: relative;
   display: grid;
-  grid-template-columns: 72px minmax(130px, 174px) minmax(0, 1fr) 108px;
+  grid-template-columns: clamp(60px, 5vw, 72px) clamp(110px, 12vw, 174px) minmax(0, 1fr) clamp(80px, 7.5vw, 108px);
   align-items: center;
-  gap: 22px;
+  gap: clamp(12px, 1.55vw, 22px);
   min-height: 88px;
-  padding: 8px 18px;
+  padding: 8px clamp(10px, 1.25vw, 18px);
   margin-bottom: 0;
   border: 0;
   border-bottom: 1px solid var(--line);
@@ -506,8 +518,8 @@ input:focus-visible {
 }
 
 .episode-play-button {
-  width: 58px;
-  height: 58px;
+  width: clamp(54px, 4.03vw, 58px);
+  height: clamp(54px, 4.03vw, 58px);
   border: 1px solid rgb(176 209 241 / 70%);
   border-radius: 50%;
   background: rgb(255 255 255 / 70%);
@@ -593,8 +605,9 @@ input:focus-visible {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 24px;
-  margin: var(--section-gap) 20px 16px;
+  min-width: 0;
+  gap: clamp(12px, 1.65vw, 24px);
+  margin: var(--section-gap) clamp(12px, 1.4vw, 20px) 16px;
   padding: 14px 18px;
   border: 1px solid var(--glass-border);
   border-radius: 20px;
@@ -619,8 +632,8 @@ input:focus-visible {
 }
 
 .icon-button-primary {
-  width: 78px;
-  height: 78px;
+  width: clamp(74px, 5.42vw, 78px);
+  height: clamp(74px, 5.42vw, 78px);
   border-radius: 50%;
   border: 1px solid rgb(255 255 255 / 58%);
   background: linear-gradient(145deg, #67b9ff, var(--blue));
@@ -642,8 +655,8 @@ input:focus-visible {
 }
 
 .icon-button-secondary {
-  width: 58px;
-  height: 58px;
+  width: clamp(54px, 4.03vw, 58px);
+  height: clamp(54px, 4.03vw, 58px);
   border: 1px solid rgb(181 210 238 / 68%);
   border-radius: 14px;
   background: rgb(255 255 255 / 62%);
@@ -804,9 +817,9 @@ input:focus-visible {
 }
 
 .speed-control button {
-  min-width: 76px;
-  min-height: 56px;
-  padding: 8px 12px;
+  min-width: clamp(56px, 5.28vw, 76px);
+  min-height: clamp(54px, 3.9vw, 56px);
+  padding: 8px clamp(8px, .83vw, 12px);
   border: 0;
   border-radius: 10px;
   background: transparent;
@@ -838,80 +851,6 @@ input:focus-visible {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
-}
-
-@media (max-width: 1100px) {
-  :root {
-    --player-height: 170px;
-    --content-padding: 22px;
-  }
-
-  .page-header {
-    padding-top: 18px;
-  }
-
-  .header-heading-row {
-    margin-bottom: 14px;
-  }
-
-  .date-tab {
-    padding-inline: 0;
-  }
-
-  .source-filter-section {
-    padding-block: 12px 10px;
-  }
-
-  .source-filter {
-    min-width: 140px;
-    min-height: 56px;
-  }
-
-  .episode-row {
-    grid-template-columns: 66px 124px minmax(0, 1fr) 92px;
-    gap: 18px;
-    min-height: 88px;
-    padding-inline: 10px;
-  }
-
-  .episode-play-button {
-    width: 54px;
-    height: 54px;
-  }
-
-  .player-dock {
-    gap: 18px;
-    margin-inline: 12px;
-  }
-
-  .icon-button-primary {
-    width: 74px;
-    height: 74px;
-  }
-
-  .icon-button-secondary {
-    width: 54px;
-    height: 54px;
-  }
-
-  .speed-control {
-    gap: 8px;
-  }
-
-  .speed-control button {
-    min-width: 64px;
-    min-height: 54px;
-    padding-inline: 10px;
-    font-size: 19px;
-  }
-}
-
-@media (max-width: 1200px) {
-  .date-tabs {
-    gap: 8px;
-  }
-
-  .date-month-day { display: none; }
 }
 
 @media (max-height: 720px) {
@@ -1032,8 +971,6 @@ input:focus-visible {
   }
 
   .date-tabs {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 6px;
     min-height: 44px;
   }
@@ -1041,9 +978,9 @@ input:focus-visible {
   .date-tab {
     flex-direction: row;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     gap: 3px;
-    width: 100%;
+    width: auto;
     min-height: 44px;
     height: 44px;
     padding: 5px 0 9px;
@@ -1058,9 +995,6 @@ input:focus-visible {
     text-overflow: ellipsis;
   }
 
-  .date-relative-label { display: none; }
-  .date-relative-compact { display: inline; }
-
   .date-count {
     min-width: 18px;
     height: 20px;
@@ -1070,7 +1004,7 @@ input:focus-visible {
   }
 
   .source-filter-section {
-    display: block;
+    gap: 8px;
     padding: 8px 10px;
   }
 
@@ -1084,11 +1018,10 @@ input:focus-visible {
   }
 
   .source-filter-label {
-    display: none;
+    font-size: 12px;
   }
 
   .source-filters {
-    width: 100%;
     max-width: 100%;
     gap: 4px;
     padding: 3px;
@@ -1270,11 +1203,6 @@ input:focus-visible {
     scroll-behavior: auto !important;
     transition: none !important;
   }
-}
-
-@media (max-width: 700px) and (orientation: landscape) {
-  .date-tabs { display: flex; gap: 12px; }
-  .date-tab { width: auto; justify-content: flex-start; padding-inline: 2px; }
 }
 
 /* The admin route reuses player cards and keeps visibility controls distinct. */

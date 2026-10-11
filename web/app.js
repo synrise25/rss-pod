@@ -185,6 +185,8 @@ const state = {
 };
 
 updateGreeting();
+window.addEventListener("resize", fitDateTabs);
+document.fonts?.ready.then(fitDateTabs);
 window.setInterval(updateGreeting, 60_000);
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) updateGreeting();
@@ -340,6 +342,16 @@ function renderDateTabs() {
       renderAll();
     });
     elements.dateTabs.append(button);
+  }
+  fitDateTabs();
+}
+
+function fitDateTabs() {
+  if (!elements.dateTabs.children.length || !elements.dateTabs.clientWidth) return;
+  // Keep the full dates until their actual text and counts no longer fit.
+  for (const density of ["full", "compact", "short"]) {
+    elements.dateTabs.dataset.density = density;
+    if (elements.dateTabs.scrollWidth <= elements.dateTabs.clientWidth + 1) break;
   }
 }
 
