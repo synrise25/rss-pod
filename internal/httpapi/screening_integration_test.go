@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -63,5 +64,55 @@ func TestScreeningManagementVisibilityIntegration(t *testing.T) {
 	player.listEpisodes(rr, httptest.NewRequest("GET", "/api/v1/player/episodes", nil))
 	if rr.Code != 200 || strings.Contains(rr.Body.String(), "推广帖") || strings.Contains(rr.Body.String(), "领取码") {
 		t.Fatalf("public: %d %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestAdminSkippedPastWeekIntegration(t *testing.T) {
+	pool := adminTestPool(t)
+	ctx := context.Background()
+	insert := func(title, status, age string) {
+		t.Helper()
+		id := uuid.NewString()
+		_, err := pool.Exec(ctx, `WITH f AS (
+            INSERT INTO feed_items(source_id,external_id,title) VALUES('test',$1,$2) RETURNING id
+        ), e AS (
+            INSERT INTO episodes(id,source_id,feed_item_id,title,status)
+            SELECT $1::uuid,'test',id,$2,$3 FROM f RETURNING id
+        ) INSERT INTO episode_screenings(episode_id,input_hash,decision,reason,llm_service,model,created_at)
+        SELECT id,'hash','skip','reason','test','test-model',now()-$4::interval FROM e`, id, title, status, age)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	// More than 100 recent results must survive the former row-count limit.
+	for i := range 105 {
+		insert(fmt.Sprintf("recent-%03d", i), "skipped", fmt.Sprintf("%d hours", i))
+	}
+	insert("inside-week", "skipped", "167 hours 59 minutes")
+	insert("outside-week", "skipped", "168 hours 1 minute")
+	insert("old", "skipped", "8 days")
+	insert("no-longer-skipped", "published", "1 minute")
+	admin := &adminServer{pool: pool}
+	rr := httptest.NewRecorder()
+	admin.listSkipped(rr, httptest.NewRequest(http.MethodGet, "/api/v1/admin/skipped", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rr.Code, rr.Body.String())
+	}
+	var result struct {
+		Episodes []struct{ Title string } `json:"episodes"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Episodes) != 106 {
+		t.Fatalf("got %d recent results, want 106", len(result.Episodes))
+	}
+	for i, episode := range result.Episodes[:105] {
+		if want := fmt.Sprintf("recent-%03d", i); episode.Title != want {
+			t.Fatalf("result %d = %q, want %q", i, episode.Title, want)
+		}
+	}
+	if result.Episodes[105].Title != "inside-week" {
+		t.Fatalf("week boundary: %q", result.Episodes[105].Title)
 	}
 }

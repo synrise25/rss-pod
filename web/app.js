@@ -44,7 +44,8 @@ const copy = {
     untitled: "Untitled episode",
     durationUnavailable: "Duration unavailable",
     mediaAlbum: "Commute Podcasts",
-    relativeDates: ["Today", "Yesterday", "2 days ago"],
+    relativeDates: ["Today", "Yesterday", "2 days ago", "3 days ago"],
+    compactRelativeDates: ["Today", "Yest.", "2d ago", "3d ago"],
     dateLocale: "en-US",
     greetings: ["Good morning", "Good afternoon", "Good afternoon", "Good evening"],
     greeting: (value) => `${value}. What's worth a listen?`,
@@ -81,7 +82,7 @@ const copy = {
     untitled: "未命名播客",
     durationUnavailable: "暂无播放时长",
     mediaAlbum: "通勤播客",
-    relativeDates: ["今天", "昨天", "前天"],
+    relativeDates: ["今天", "昨天", "前天", "3 天前"],
     dateLocale: "zh-CN",
     greetings: ["早上好", "中午好", "下午好", "晚上好"],
     greeting: (value) => `${value}，今天听什么？`,
@@ -94,14 +95,14 @@ const copy = {
 
 const adminCopy = localeKey === "zh-CN" ? {
   login: "管理员登录", code: "验证器动态码", hint: "输入验证器中的 6 位动态码，会话有效期 30 分钟。",
-  skipped: "最近跳过的内容（最多 100 条）", skippedEmpty: "暂无跳过的内容。", refresh: "刷新",
-  logout: "退出管理", hide: "隐藏", restore: "恢复显示", hidden: "已隐藏",
+  skipped: "最近跳过的内容", skippedEmpty: "最近一周暂无跳过的内容。", refresh: "刷新",
+  logout: "退出管理", download: "下载", hide: "隐藏", restore: "恢复显示", hidden: "已隐藏",
   loginError: "动态码无效或已使用，请等待下一组动态码。", rateLimit: "尝试过于频繁，请等待一分钟。",
   expired: "会话已过期，请重新登录。", error: "操作失败，请稍后重试。",
 } : {
   login: "Admin login", code: "Authenticator code", hint: "Enter your 6-digit code. Sessions last 30 minutes.",
-  skipped: "Recently skipped (up to 100)", skippedEmpty: "No skipped content.", refresh: "Refresh",
-  logout: "Sign out", hide: "Hide", restore: "Restore", hidden: "Hidden",
+  skipped: "Recently skipped", skippedEmpty: "No skipped content in the past week.", refresh: "Refresh",
+  logout: "Sign out", download: "Download", hide: "Hide", restore: "Restore", hidden: "Hidden",
   loginError: "Invalid or already used code. Wait for the next code.", rateLimit: "Too many attempts. Wait one minute.",
   expired: "Session expired. Please sign in again.", error: "Operation failed. Please try again.",
 };
@@ -184,6 +185,8 @@ const state = {
 };
 
 updateGreeting();
+window.addEventListener("resize", fitDateTabs);
+document.fonts?.ready.then(fitDateTabs);
 window.setInterval(updateGreeting, 60_000);
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) updateGreeting();
@@ -317,11 +320,21 @@ function renderDateTabs() {
     button.setAttribute("aria-selected", String(state.activeDate === option.key));
 
     const label = document.createElement("span");
-    label.textContent = `${option.relativeLabel} ${option.monthDay}`;
+    const relativeLabel = document.createElement("span");
+    relativeLabel.className = "date-relative-label";
+    relativeLabel.textContent = option.relativeLabel;
+    const compactLabel = document.createElement("span");
+    compactLabel.className = "date-relative-compact";
+    compactLabel.textContent = option.compactLabel;
+    const monthDay = document.createElement("span");
+    monthDay.className = "date-month-day";
+    monthDay.textContent = ` ${option.monthDay}`;
+    label.append(relativeLabel, compactLabel, monthDay);
     const count = document.createElement("span");
     count.className = "date-count";
     count.textContent = String(countEpisodesForDate(option.key));
     count.setAttribute("aria-label", copy.episodeCount(Number(count.textContent)));
+    button.setAttribute("aria-label", `${option.relativeLabel} ${option.monthDay}, ${copy.episodeCount(Number(count.textContent))}`);
     button.append(label, count);
 
     button.addEventListener("click", () => {
@@ -329,6 +342,17 @@ function renderDateTabs() {
       renderAll();
     });
     elements.dateTabs.append(button);
+  }
+  fitDateTabs();
+}
+
+function fitDateTabs() {
+  if (!elements.dateTabs.children.length || !elements.dateTabs.clientWidth) return;
+  // Keep the full dates until their actual text and counts no longer fit.
+  for (const density of ["full", "compact", "short"]) {
+    elements.dateTabs.dataset.density = density;
+    const buttonsFit = [...elements.dateTabs.children].every((button) => button.scrollWidth <= button.clientWidth + 1);
+    if (buttonsFit && elements.dateTabs.scrollWidth <= elements.dateTabs.clientWidth + 1) break;
   }
 }
 
@@ -403,6 +427,14 @@ function renderEpisodeList() {
     renderEpisodeDuration(time, episode.durationSeconds);
     if (isAdminPage && adminCSRF) {
       row.classList.add("admin-episode-row");
+      const actions = document.createElement("div");
+      actions.className = "admin-episode-actions";
+      const downloadLink = document.createElement("a");
+      downloadLink.className = "admin-download";
+      downloadLink.href = `/api/v1/admin/episodes/${encodeURIComponent(episode.id)}/download`;
+      downloadLink.download = "";
+      downloadLink.textContent = adminCopy.download;
+      downloadLink.setAttribute("aria-label", `${adminCopy.download}: ${episode.title}`);
       const visibilityButton = document.createElement("button");
       visibilityButton.type = "button";
       visibilityButton.className = "admin-visibility";
@@ -417,7 +449,8 @@ function renderEpisodeList() {
         badge.textContent = adminCopy.hidden;
         title.prepend(badge);
       }
-      row.append(visibilityButton);
+      actions.append(downloadLink, visibilityButton);
+      row.append(actions);
     }
     fragment.append(row);
   }
@@ -765,8 +798,10 @@ function createDateOptions(now = new Date()) {
     { relativeLabel: copy.relativeDates[0], date: today },
     { relativeLabel: copy.relativeDates[1], date: addDays(today, -1) },
     { relativeLabel: copy.relativeDates[2], date: addDays(today, -2) },
-  ].map((option) => ({
+    { relativeLabel: copy.relativeDates[3], date: addDays(today, -3) },
+  ].map((option, index) => ({
     ...option,
+    compactLabel: copy.compactRelativeDates?.[index] || option.relativeLabel,
     key: dateKey(option.date),
     monthDay: new Intl.DateTimeFormat(copy.dateLocale, {
       month: "short",
@@ -1086,7 +1121,7 @@ async function setupAdmin() {
     <div class="admin-login-controls"><input id="admin-code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required />
     <button type="submit">${adminCopy.login}</button></div>
     </form><p id="admin-message" role="status" aria-live="polite"></p>
-    <button id="admin-logout" type="button" hidden>${adminCopy.logout}</button>`;
+    <button id="admin-logout" class="header-button" type="button" hidden>${adminCopy.logout}</button>`;
   elements.dateTabs.before(panel);
   const skipped = document.createElement("details");
   skipped.className = "admin-skipped";

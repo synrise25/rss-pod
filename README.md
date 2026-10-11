@@ -165,8 +165,9 @@ retained after refreshes and language changes.
 
 ### Admin page
 
-Sign in at `/admin` to hide or restore episodes and inspect recently skipped
-content. The page is disabled by default. To enable it, generate a secret:
+Sign in at `/admin` to download individual audio episodes, hide or restore them,
+and inspect content skipped during the past week. The page is disabled by
+default. To enable it, generate a secret:
 
 ```bash
 python3 -c 'import base64, secrets; print(base64.b32encode(secrets.token_bytes(20)).decode())'

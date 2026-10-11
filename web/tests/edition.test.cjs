@@ -11,7 +11,7 @@ function fixture() {
   }
   const context = vm.createContext({
     Date: Clock, Intl, URLSearchParams, console,
-    copy: { relativeDates: ['Today', 'Yesterday', 'Earlier'], dateLocale: 'en', untitled: 'Untitled' },
+    copy: { relativeDates: ['Today', 'Yesterday', '2 days ago', '3 days ago'], dateLocale: 'en', untitled: 'Untitled' },
     state: { activeDate: "2026-09-26" }, isAdminPage: false,
     fetch: async url => {
       requests.push(url);
@@ -38,7 +38,10 @@ test('calendar and query boundaries use project timezone', async () => {
   assert.equal(c.state.dateOptions[0].key, '2026-09-27');
   assert.equal(c.state.activeDate, '2026-09-27');
   assert.equal(c.state.dateOptions[1].key, '2026-09-26');
+  assert.equal(c.state.dateOptions.length, 4);
+  assert.equal(c.state.dateOptions[3].key, '2026-09-24');
+  assert.equal(c.state.dateOptions[3].relativeLabel, '3 days ago');
   const params = new URL(requests[1], 'https://example.com').searchParams;
-  assert.equal(params.get('since'), '2026-09-25');
+  assert.equal(params.get('since'), '2026-09-24');
   assert.equal(params.get('before'), '2026-09-28');
 });
