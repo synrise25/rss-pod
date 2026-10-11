@@ -82,7 +82,7 @@ const copy = {
     untitled: "未命名播客",
     durationUnavailable: "暂无播放时长",
     mediaAlbum: "通勤播客",
-    relativeDates: ["今天", "昨天", "前天", "3 天前"],
+    relativeDates: ["今天", "昨天", "前天", "3天前"],
     dateLocale: "zh-CN",
     greetings: ["早上好", "中午好", "下午好", "晚上好"],
     greeting: (value) => `${value}，今天听什么？`,
