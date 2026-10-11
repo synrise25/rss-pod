@@ -137,3 +137,19 @@ func TestPlayerWebHandlerServesGitHubIcon(t *testing.T) {
 		t.Fatal("embedded GitHub icon is empty")
 	}
 }
+
+func TestPlayerWebHandlerServesThemeAssets(t *testing.T) {
+	t.Parallel()
+
+	for _, path := range []string{"/theme.js", "/themes.css"} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		response := httptest.NewRecorder()
+		playerWebHandler().ServeHTTP(response, request)
+		if response.Code != http.StatusOK || response.Body.Len() == 0 {
+			t.Fatalf("%s: embedded theme asset unavailable (status %d)", path, response.Code)
+		}
+		if strings.HasPrefix(response.Header().Get("Content-Type"), "text/html") {
+			t.Fatalf("%s: theme asset served as HTML", path)
+		}
+	}
+}

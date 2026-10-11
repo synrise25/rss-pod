@@ -589,7 +589,7 @@ input:focus-visible {
 
 .player-dock {
   display: grid;
-  grid-template-columns: auto minmax(280px, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 24px;
   margin: var(--section-gap) 20px 16px;

@@ -1,6 +1,7 @@
 .git
 .github
 .private-context
+design-qa.md
 .data
 .env
 .DS_Store
