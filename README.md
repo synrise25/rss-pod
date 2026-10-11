@@ -1,8 +1,5 @@
 <div align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/rss-pod-logo-dark.svg">
-    <img src="docs/assets/rss-pod-logo.png" width="112" height="112" alt="rss-pod logo">
-  </picture>
+  <img src="docs/assets/rss-pod-logo.png" width="112" height="112" alt="rss-pod logo">
   <h1>rss-pod</h1>
   <p><strong>Turn what you do not have time to read into podcasts for the road.</strong></p>
   <p>
