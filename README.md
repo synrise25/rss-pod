@@ -30,8 +30,6 @@ content you care about during your commute, drive, or walk.
 
 **▶ Press play and enable sound — English · 3:06**
 
-An English adaptation of a [V2EX discussion](https://www.v2ex.com/t/1247509),
-voiced by Ava and Andrew with Azure Dragon HD MultiTalker.
 [Listen to the Chinese original](README.zh-CN.md#播客试听).
 
 https://github.com/user-attachments/assets/906d8d1f-e60b-4e30-a0a5-2bafe74f9361

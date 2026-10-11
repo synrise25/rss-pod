@@ -29,8 +29,6 @@ rss-pod 是一个自托管的 RSS 转播客应用：用兼容 OpenAI 协议的 L
 
 **▶ 点击播放并开启声音 — 中文原节目 · 3:28**
 
-根据 [V2EX 讨论](https://www.v2ex.com/t/1247509)生成的双人播客，
-由 Azure Dragon HD MultiTalker 的 Xiaochen 和 Yunhan 合成。
 [试听英文改编版](README.md#audio-demo)。
 
 https://github.com/user-attachments/assets/df361dd5-dff3-442b-a0c1-803e1b8ad2d1
