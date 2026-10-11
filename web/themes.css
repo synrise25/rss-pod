@@ -19,6 +19,7 @@
   --play-radius: 50%;
   --utility-height: 52px;
   --utility-radius: 14px;
+  --utility-inner-radius: 10px;
 }
 
 :root[data-style="silver"] {
@@ -191,13 +192,13 @@
   backdrop-filter: none;
 }
 
-:root:not([data-style="glacier"][data-appearance="day"]) :is(.source-filters, .speed-control) {
+:root:not([data-style="glacier"][data-appearance="day"]) :is(.source-filters, .speed-control, .header-actions .header-button, .header-actions .language-switcher, .header-actions .github-link, .theme-close) {
   border-color: var(--line);
   background: var(--group);
   box-shadow: inset 0 1px 0 var(--glass-highlight);
 }
 
-:root:not([data-style="glacier"][data-appearance="day"]) :is(.source-filter[aria-pressed="true"], .speed-control button[aria-pressed="true"]) {
+:root:not([data-style="glacier"][data-appearance="day"]) :is(.source-filter[aria-pressed="true"], .speed-control button[aria-pressed="true"], .header-actions .language-switcher a[aria-current="page"]) {
   background: var(--selected);
   color: var(--on-selected);
   box-shadow: none;
@@ -209,7 +210,7 @@
   box-shadow: inset 0 0 0 1px var(--glass-highlight), 0 2px 8px rgb(45 37 25 / 7%);
 }
 
-:root:not([data-style="glacier"][data-appearance="day"]) :is(.source-filter:hover:not([aria-pressed="true"]), .speed-control button:hover:not([aria-pressed="true"])) {
+:root:not([data-style="glacier"][data-appearance="day"]) :is(.source-filter:hover:not([aria-pressed="true"]), .speed-control button:hover:not([aria-pressed="true"]), .header-actions .header-button:hover, .header-actions .github-link:hover, .header-actions .language-switcher a:hover:not([aria-current="page"]), .theme-close:hover) {
   background: var(--control-hover);
   color: var(--navy);
 }
@@ -314,7 +315,7 @@
   box-shadow: inset 0 2px 3px var(--glass-highlight), inset 0 -2px 5px rgb(54 42 26 / 9%), 0 3px 8px rgb(25 20 14 / 8%);
 }
 
-:root[data-style="crystal"][data-appearance] :is(.source-filters, .speed-control) {
+:root[data-style="crystal"][data-appearance] :is(.source-filters, .speed-control, .header-actions .header-button, .header-actions .language-switcher, .header-actions .github-link, .theme-close) {
   border-color: var(--glass-border);
   box-shadow: inset 0 2px 3px var(--glass-highlight), 0 4px 12px rgb(25 20 14 / 7%);
   backdrop-filter: blur(10px);
@@ -360,7 +361,7 @@
   background: var(--surface-solid);
 }
 
-:root:not([data-style="glacier"][data-appearance="day"]) :is(.admin-panel button, .admin-panel input, #admin-logout, .admin-visibility, .admin-download, .admin-skipped button, .admin-hidden-badge) {
+:root:not([data-style="glacier"][data-appearance="day"]) :is(.admin-panel button, .admin-panel input, .admin-visibility, .admin-download, .admin-skipped button, .admin-hidden-badge) {
   border-color: var(--line-strong);
   background: var(--control);
   color: var(--navy);
@@ -378,23 +379,23 @@
   background: var(--surface-blue);
 }
 
-.header-actions :is(.theme-button, .language-switcher, .github-link), .theme-close {
+.header-actions :is(.header-button, .language-switcher, .github-link), .theme-close {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   height: var(--utility-height);
   min-height: var(--utility-height);
-  border: 1px solid var(--line);
+  border: 1px solid rgb(191 213 236 / 58%);
   border-radius: var(--utility-radius);
-  background: var(--control);
+  background: rgb(226 239 252 / 58%);
   color: var(--navy);
-  box-shadow: none;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 76%);
   font-size: 16px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
-.theme-button, .theme-close {
+.header-button, .theme-close {
   padding: 8px 18px;
   cursor: pointer;
 }
@@ -414,23 +415,23 @@
   min-width: 54px;
   height: calc(var(--utility-height) - 10px);
   padding: 6px 12px;
-  border-radius: calc(var(--utility-radius) - 4px);
+  border-radius: var(--utility-inner-radius);
   color: var(--muted);
   font-size: 16px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .header-actions .language-switcher a[aria-current="page"] {
-  background: var(--selected);
-  color: var(--on-selected);
-  box-shadow: none;
+  background: linear-gradient(135deg, #5ba1ff, #3f83f1);
+  color: #ffffff;
+  box-shadow: 0 7px 16px rgb(79 142 247 / 20%), inset 0 1px 0 rgb(255 255 255 / 34%);
 }
 
-.header-actions :is(.theme-button:hover, .github-link:hover), .theme-close:hover,
+.header-actions :is(.header-button:hover, .github-link:hover), .theme-close:hover,
 .header-actions .language-switcher a:hover:not([aria-current="page"]) {
-  border-color: var(--line);
-  background: var(--control-hover);
-  color: var(--navy);
+  border-color: rgb(191 213 236 / 58%);
+  background: rgb(255 255 255 / 68%);
+  color: var(--blue-hover);
 }
 
 #github-link img {
@@ -613,6 +614,8 @@
 @media (max-width: 700px) {
   :root {
     --utility-height: 44px;
+    --utility-radius: 11px;
+    --utility-inner-radius: 8px;
   }
 
   .header-heading-row {
@@ -627,7 +630,7 @@
     gap: 8px;
   }
 
-  .theme-button {
+  .header-button {
     padding: 8px 14px;
   }
 

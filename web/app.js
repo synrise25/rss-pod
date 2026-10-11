@@ -45,6 +45,7 @@ const copy = {
     durationUnavailable: "Duration unavailable",
     mediaAlbum: "Commute Podcasts",
     relativeDates: ["Today", "Yesterday", "2 days ago", "3 days ago"],
+    compactRelativeDates: ["Today", "Yest.", "2d ago", "3d ago"],
     dateLocale: "en-US",
     greetings: ["Good morning", "Good afternoon", "Good afternoon", "Good evening"],
     greeting: (value) => `${value}. What's worth a listen?`,
@@ -81,7 +82,7 @@ const copy = {
     untitled: "未命名播客",
     durationUnavailable: "暂无播放时长",
     mediaAlbum: "通勤播客",
-    relativeDates: ["今天", "昨天", "前天", "大前天"],
+    relativeDates: ["今天", "昨天", "前天", "3 天前"],
     dateLocale: "zh-CN",
     greetings: ["早上好", "中午好", "下午好", "晚上好"],
     greeting: (value) => `${value}，今天听什么？`,
@@ -317,11 +318,21 @@ function renderDateTabs() {
     button.setAttribute("aria-selected", String(state.activeDate === option.key));
 
     const label = document.createElement("span");
-    label.textContent = `${option.relativeLabel} ${option.monthDay}`;
+    const relativeLabel = document.createElement("span");
+    relativeLabel.className = "date-relative-label";
+    relativeLabel.textContent = option.relativeLabel;
+    const compactLabel = document.createElement("span");
+    compactLabel.className = "date-relative-compact";
+    compactLabel.textContent = option.compactLabel;
+    const monthDay = document.createElement("span");
+    monthDay.className = "date-month-day";
+    monthDay.textContent = ` ${option.monthDay}`;
+    label.append(relativeLabel, compactLabel, monthDay);
     const count = document.createElement("span");
     count.className = "date-count";
     count.textContent = String(countEpisodesForDate(option.key));
     count.setAttribute("aria-label", copy.episodeCount(Number(count.textContent)));
+    button.setAttribute("aria-label", `${option.relativeLabel} ${option.monthDay}, ${copy.episodeCount(Number(count.textContent))}`);
     button.append(label, count);
 
     button.addEventListener("click", () => {
@@ -775,8 +786,9 @@ function createDateOptions(now = new Date()) {
     { relativeLabel: copy.relativeDates[1], date: addDays(today, -1) },
     { relativeLabel: copy.relativeDates[2], date: addDays(today, -2) },
     { relativeLabel: copy.relativeDates[3], date: addDays(today, -3) },
-  ].map((option) => ({
+  ].map((option, index) => ({
     ...option,
+    compactLabel: copy.compactRelativeDates?.[index] || option.relativeLabel,
     key: dateKey(option.date),
     monthDay: new Intl.DateTimeFormat(copy.dateLocale, {
       month: "short",
@@ -1096,7 +1108,7 @@ async function setupAdmin() {
     <div class="admin-login-controls"><input id="admin-code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required />
     <button type="submit">${adminCopy.login}</button></div>
     </form><p id="admin-message" role="status" aria-live="polite"></p>
-    <button id="admin-logout" type="button" hidden>${adminCopy.logout}</button>`;
+    <button id="admin-logout" class="header-button" type="button" hidden>${adminCopy.logout}</button>`;
   elements.dateTabs.before(panel);
   const skipped = document.createElement("details");
   skipped.className = "admin-skipped";

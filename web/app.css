@@ -298,10 +298,12 @@ input:focus-visible {
 .date-tabs {
   display: flex;
   align-items: stretch;
-  gap: 34px;
+  gap: clamp(12px, 2vw, 24px);
   min-height: 66px;
   border-bottom: 0;
 }
+
+.date-relative-compact { display: none; }
 
 .date-tab {
   position: relative;
@@ -906,10 +908,10 @@ input:focus-visible {
 
 @media (max-width: 1200px) {
   .date-tabs {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
   }
+
+  .date-month-day { display: none; }
 }
 
 @media (max-height: 720px) {
@@ -1031,22 +1033,22 @@ input:focus-visible {
 
   .date-tabs {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
-    min-height: 62px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    min-height: 44px;
   }
 
   .date-tab {
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
     justify-content: center;
     gap: 3px;
     width: 100%;
-    min-height: 62px;
-    height: 62px;
-    padding: 5px 2px 9px;
+    min-height: 44px;
+    height: 44px;
+    padding: 5px 0 9px;
     overflow: hidden;
-    font-size: 15px;
+    font-size: clamp(12px, 3.5vw, 15px);
     line-height: 1.15;
   }
 
@@ -1056,12 +1058,15 @@ input:focus-visible {
     text-overflow: ellipsis;
   }
 
+  .date-relative-label { display: none; }
+  .date-relative-compact { display: inline; }
+
   .date-count {
-    min-width: 24px;
-    height: 24px;
-    padding-inline: 6px;
+    min-width: 18px;
+    height: 20px;
+    padding-inline: 1px;
     border-radius: 7px;
-    font-size: 11px;
+    font-size: 10px;
   }
 
   .source-filter-section {
@@ -1267,6 +1272,11 @@ input:focus-visible {
   }
 }
 
+@media (max-width: 700px) and (orientation: landscape) {
+  .date-tabs { display: flex; gap: 12px; }
+  .date-tab { width: auto; justify-content: flex-start; padding-inline: 2px; }
+}
+
 /* The admin route reuses player cards and keeps visibility controls distinct. */
 [hidden] { display: none !important; }
 .admin-panel { margin: 12px 0 20px; font-size: 14px; }
@@ -1274,15 +1284,15 @@ input:focus-visible {
 .admin-panel.is-authenticated #admin-message { margin-right: auto; }
 .admin-panel p { line-height: 1.6; }
 #admin-message:empty { display: none; }
-#admin-logout { flex-shrink: 0; min-height: 44px; font-size: 14px; white-space: nowrap; }
+#admin-logout { white-space: nowrap; }
 .admin-login { width: min(100%, 480px); padding: 24px; border: 1px solid #cfdeeb; border-radius: 20px; background: #ffffffb8; }
 .admin-login h2 { margin-top: 0; }
 .admin-login label { display: block; margin-bottom: 8px; font-weight: 600; }
 .admin-login-controls { display: flex; gap: 12px; flex-wrap: wrap; }
-.admin-panel button, #admin-logout, .admin-visibility, .admin-download { padding: 10px 14px; border: 1px solid #bfd2e2; border-radius: 12px; background: #f4f9ff; color: #244560; font: inherit; cursor: pointer; }
+.admin-panel button, .admin-visibility, .admin-download { padding: 10px 14px; border: 1px solid #bfd2e2; border-radius: 12px; background: #f4f9ff; color: #244560; font: inherit; cursor: pointer; }
 .admin-panel button:disabled, #admin-logout:disabled, .admin-visibility:disabled { opacity: .5; cursor: wait; }
 .admin-panel input { min-width: 0; width: 160px; padding: 10px; font: inherit; font-size: 20px; letter-spacing: .2em; border: 1px solid #bfd2e2; border-radius: 12px; }
-.admin-panel :focus-visible, #admin-logout:focus-visible, .admin-visibility:focus-visible, .admin-download:focus-visible { outline: 3px solid #2584c4; outline-offset: 3px; }
+.admin-panel :focus-visible, .admin-visibility:focus-visible, .admin-download:focus-visible { outline: 3px solid #2584c4; outline-offset: 3px; }
 .admin-episode-actions { display: flex; align-items: center; justify-self: end; gap: 8px; white-space: nowrap; }
 .admin-download { text-decoration: none; }
 .admin-visibility { color: #244560; border-color: #bfd2e2; background: #f4f9ff; justify-self: end; }
@@ -1345,10 +1355,10 @@ input:focus-visible {
 }
 
 @media (max-width: 700px) {
-  #admin-logout {
-    min-height: 36px;
-    padding: 6px 10px;
-    font-size: 13px;
+  .admin-authenticated .header-actions {
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
 }
 
