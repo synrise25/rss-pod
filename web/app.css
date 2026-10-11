@@ -1226,12 +1226,14 @@ input:focus-visible {
   }
 
   .speed-control {
+    align-items: center;
     justify-content: flex-end;
     width: 100%;
     max-width: 100%;
     min-inline-size: 0;
+    height: 40px;
     gap: 2px;
-    padding: 3px;
+    padding: 0;
     border-radius: 11px;
   }
 
