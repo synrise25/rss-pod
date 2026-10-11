@@ -5,6 +5,8 @@
   <p>
     <a href="README.zh-CN.md">简体中文</a>
     ·
+    <a href="#audio-demo">Listen to a demo</a>
+    ·
     <a href="#quick-start">Quick start</a>
     ·
     <a href="#configuration">Configuration</a>
@@ -21,6 +23,18 @@ rss-pod is a self-hosted RSS-to-podcast app. It uses an OpenAI-compatible LLM to
 turn content into multi-speaker conversations, synthesizes audio with Edge TTS
 or Azure Speech, and provides a web player and podcast RSS feeds. Listen to the
 content you care about during your commute, drive, or walk.
+
+## Audio demo
+
+### Will Coding Still Pay the Bills in Five Years?
+
+**▶ Press play and enable sound — English · 3:06**
+
+An English adaptation of a [V2EX discussion](https://www.v2ex.com/t/1247509),
+voiced by Ava and Andrew with Azure Dragon HD MultiTalker.
+[Listen to the Chinese original](README.zh-CN.md#播客试听).
+
+https://github.com/user-attachments/assets/906d8d1f-e60b-4e30-a0a5-2bafe74f9361
 
 ![rss-pod web player in English](docs/assets/player-en.png)
 
