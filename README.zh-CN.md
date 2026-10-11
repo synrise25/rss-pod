@@ -1,5 +1,8 @@
 <div align="center">
-  <img src="web/icons/apple-touch-icon.png" width="112" alt="rss-pod 图标">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/rss-pod-logo-dark.svg">
+    <img src="docs/assets/rss-pod-logo.png" width="112" height="112" alt="rss-pod 图标">
+  </picture>
   <h1>rss-pod</h1>
   <p><strong>把来不及读的内容，变成路上能听的播客。</strong></p>
   <p>
