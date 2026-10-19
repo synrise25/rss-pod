@@ -168,23 +168,18 @@ func (s *playerServer) episodes(w http.ResponseWriter, r *http.Request, includeH
 
 	sourceID := r.URL.Query().Get("source_id")
 	rows, err := s.pool.Query(r.Context(), `
-		WITH dated_episodes AS (
-		    -- Temporary compatibility for episodes created before edition dates.
-		    SELECT *, COALESCE(edition_date, (created_at AT TIME ZONE $6)::date) AS display_date
-		    FROM episodes
-		)
 		SELECT e.id, e.source_id, e.title, e.audio_url, e.audio_byte_size, e.audio_duration_seconds,
-		       e.published_at, f.published_at, e.hidden_at IS NOT NULL, to_char(e.display_date, 'YYYY-MM-DD')
-		FROM dated_episodes e
+		       e.published_at, f.published_at, e.hidden_at IS NOT NULL, to_char(e.edition_date, 'YYYY-MM-DD')
+		FROM episodes e
 		JOIN feed_items f ON f.id = e.feed_item_id
-		WHERE e.status = 'published' AND e.audio_url <> ''
+		WHERE e.status = 'published' AND e.audio_url <> '' AND e.edition_date IS NOT NULL
 		  AND ($5 OR e.hidden_at IS NULL)
 		  AND ($1 = '' OR e.source_id = $1)
-		  AND (NULLIF($2, '')::date IS NULL OR e.display_date >= NULLIF($2, '')::date)
-		  AND (NULLIF($3, '')::date IS NULL OR e.display_date < NULLIF($3, '')::date)
-		ORDER BY e.display_date DESC, e.published_at DESC NULLS LAST, e.id
+		  AND (NULLIF($2, '')::date IS NULL OR e.edition_date >= NULLIF($2, '')::date)
+		  AND (NULLIF($3, '')::date IS NULL OR e.edition_date < NULLIF($3, '')::date)
+		ORDER BY e.edition_date DESC, e.published_at DESC NULLS LAST, e.id
 		LIMIT $4
-	`, sourceID, since, before, limit, includeHidden, s.dateTimezone())
+	`, sourceID, since, before, limit, includeHidden)
 	if err != nil {
 		slog.Error("query player episodes", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to load episodes")

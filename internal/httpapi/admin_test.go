@@ -204,7 +204,7 @@ func TestAdminSessionAndVisibilityIntegration(t *testing.T) {
 	ctx := context.Background()
 	id := uuid.NewString()
 	_, err := pool.Exec(ctx, `WITH f AS (INSERT INTO feed_items (source_id,external_id,title,content) VALUES ('test','guid','Episode','original content') RETURNING id)
- INSERT INTO episodes (id,source_id,feed_item_id,title,status,audio_url,published_at) SELECT $1,'test',id,'Episode','published','https://media.example.com/test.mp3',now() FROM f`, id)
+ INSERT INTO episodes (id,source_id,feed_item_id,title,status,audio_url,published_at,edition_date) SELECT $1,'test',id,'Episode','published','https://media.example.com/test.mp3',now(),current_date FROM f`, id)
 	if err != nil {
 		t.Fatal(err)
 	}
