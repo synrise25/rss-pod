@@ -696,7 +696,7 @@ function normalizeEpisode(episode) {
     audioURL: String(episode.audio_url || ""),
     publishedAt,
     durationSeconds: Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : null,
-    dayKey: episode.edition_date || (publishedAt ? dateKey(publishedAt) : ""),
+    dayKey: episode.edition_date || "",
     sortTime: publishedAt?.getTime() || 0,
   };
 }
@@ -1087,25 +1087,26 @@ function demoPayload() {
       { id: "zhihu-topic", name: demoContent.sources[2] },
     ],
     episodes: [
-      demoEpisode("demo-1", "zhihu-daily", demoContent.titles[0], at(today, 7, 30)),
-      demoEpisode("demo-2", "v2ex-hot", demoContent.titles[1], at(today, 6, 45)),
-      demoEpisode("demo-3", "zhihu-topic", demoContent.titles[2], at(today, 5, 40)),
-      demoEpisode("demo-4", "zhihu-daily", demoContent.titles[3], at(today, 5, 10)),
-      demoEpisode("demo-5", "v2ex-hot", demoContent.titles[4], at(today, 4, 20)),
-      demoEpisode("demo-6", "zhihu-topic", demoContent.titles[5], null, at(today, 3, 55)),
-      demoEpisode("demo-7", "zhihu-daily", demoContent.titles[6], at(yesterday, 20, 15)),
-      demoEpisode("demo-8", "v2ex-hot", demoContent.titles[7], at(dayBefore, 18, 20)),
+      demoEpisode("demo-1", "zhihu-daily", demoContent.titles[0], today.key, at(today, 7, 30)),
+      demoEpisode("demo-2", "v2ex-hot", demoContent.titles[1], today.key, at(today, 6, 45)),
+      demoEpisode("demo-3", "zhihu-topic", demoContent.titles[2], today.key, at(today, 5, 40)),
+      demoEpisode("demo-4", "zhihu-daily", demoContent.titles[3], today.key, at(today, 5, 10)),
+      demoEpisode("demo-5", "v2ex-hot", demoContent.titles[4], today.key, at(today, 4, 20)),
+      demoEpisode("demo-6", "zhihu-topic", demoContent.titles[5], today.key, null, at(today, 3, 55)),
+      demoEpisode("demo-7", "zhihu-daily", demoContent.titles[6], yesterday.key, at(yesterday, 20, 15)),
+      demoEpisode("demo-8", "v2ex-hot", demoContent.titles[7], dayBefore.key, at(dayBefore, 18, 20)),
     ],
   };
 }
 
-function demoEpisode(id, sourceID, title, originalPublishedAt, publishedAt = originalPublishedAt) {
+function demoEpisode(id, sourceID, title, editionDate, originalPublishedAt, publishedAt = originalPublishedAt) {
   return {
     id,
     source_id: sourceID,
     title,
     audio_url: DEMO_AUDIO,
     audio_duration_seconds: 30,
+    edition_date: editionDate,
     published_at: publishedAt,
     original_published_at: originalPublishedAt,
   };
