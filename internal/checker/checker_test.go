@@ -8,9 +8,43 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/synrise25/rss-pod/internal/config"
 )
+
+func TestNewMinIOClientHonorsForcePathStyle(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		forcePathStyle bool
+		wantHost       string
+		wantPath       string
+	}{
+		{name: "path style", forcePathStyle: true, wantHost: "storage.example.com", wantPath: "/media/healthchecks/probe.txt"},
+		{name: "bucket subdomain", forcePathStyle: false, wantHost: "media.storage.example.com", wantPath: "/healthchecks/probe.txt"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client, err := newMinIOClient(config.StorageConfig{
+				Endpoint:       "https://storage.example.com",
+				Region:         "us-east-1",
+				AccessKey:      "test-access-key",
+				SecretKey:      "test-secret-key",
+				ForcePathStyle: tc.forcePathStyle,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			// A fixed region and static credentials keep URL generation offline.
+			requestURL, err := client.PresignedPutObject(context.Background(), "media", "healthchecks/probe.txt", time.Minute)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if requestURL.Scheme != "https" || requestURL.Host != tc.wantHost || requestURL.Path != tc.wantPath {
+				t.Fatalf("request URL = %s://%s%s, want https://%s%s", requestURL.Scheme, requestURL.Host, requestURL.Path, tc.wantHost, tc.wantPath)
+			}
+		})
+	}
+}
 
 func TestOptionalChecksIgnoreDisabledAndOverriddenContent(t *testing.T) {
 	for _, kind := range []string{"jina", "crawl4ai"} {

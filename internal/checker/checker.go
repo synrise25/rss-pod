@@ -178,11 +178,15 @@ func newMinIOClient(storage config.StorageConfig) (*minio.Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	bucketLookup := minio.BucketLookupDNS
+	if storage.ForcePathStyle {
+		bucketLookup = minio.BucketLookupPath
+	}
 	client, err := minio.New(endpoint.Host, &minio.Options{
 		Creds:        credentials.NewStaticV4(storage.AccessKey, storage.SecretKey, ""),
 		Secure:       endpoint.Scheme == "https",
 		Region:       storage.Region,
-		BucketLookup: minio.BucketLookupPath,
+		BucketLookup: bucketLookup,
 		Transport:    transportWithoutEnvironmentProxy(),
 	})
 	if err != nil {

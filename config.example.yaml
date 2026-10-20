@@ -59,8 +59,10 @@ runtime:
     secret_key: env://S3_SECRET_ACCESS_KEY
     private_bucket: rsspod-private
     media_bucket: rsspod-media
-    # MinIO normally uses path-style; disable it only with bucket subdomains and wildcard DNS.
-    # MinIO 通常使用 path-style；配置 bucket 子域名和通配符 DNS 后才考虑关闭。
+    # true uses endpoint/bucket/key; false uses bucket.endpoint/key (default when omitted: false).
+    # true 使用 endpoint/bucket/key；false 使用 bucket.endpoint/key（省略时默认为 false）。
+    # Bucket subdomains require matching DNS records and TLS certificates when using HTTPS.
+    # 桶子域名需要相应的 DNS 记录，使用 HTTPS 时还需要匹配的 TLS 证书。
     force_path_style: true
     # Audio URLs in podcast RSS must be stable; do not use short-lived signed URLs.
     # Podcast RSS 中的音频 URL 必须长期稳定，不能使用短期签名地址。
