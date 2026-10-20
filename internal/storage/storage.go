@@ -33,11 +33,15 @@ func New(cfg config.StorageConfig) (*Client, error) {
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil
+	bucketLookup := minio.BucketLookupDNS
+	if cfg.ForcePathStyle {
+		bucketLookup = minio.BucketLookupPath
+	}
 	client, err := minio.New(endpoint.Host, &minio.Options{
 		Creds:        credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
 		Secure:       endpoint.Scheme == "https",
 		Region:       cfg.Region,
-		BucketLookup: minio.BucketLookupPath,
+		BucketLookup: bucketLookup,
 		Transport:    transport,
 	})
 	if err != nil {

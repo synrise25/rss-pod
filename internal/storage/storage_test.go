@@ -13,6 +13,40 @@ import (
 	"github.com/synrise25/rss-pod/internal/config"
 )
 
+func TestNewHonorsForcePathStyle(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		forcePathStyle bool
+		wantHost       string
+		wantPath       string
+	}{
+		{name: "path style", forcePathStyle: true, wantHost: "storage.example.com", wantPath: "/private/segments/audio.mp3"},
+		{name: "bucket subdomain", forcePathStyle: false, wantHost: "private.storage.example.com", wantPath: "/segments/audio.mp3"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client, err := New(config.StorageConfig{
+				Endpoint:       "https://storage.example.com",
+				Region:         "us-east-1",
+				AccessKey:      "test-access-key",
+				SecretKey:      "test-secret-key",
+				PrivateBucket:  "private",
+				ForcePathStyle: tc.forcePathStyle,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			// A fixed region and static credentials keep URL generation offline.
+			requestURL, err := client.client.PresignedPutObject(context.Background(), client.config.PrivateBucket, "segments/audio.mp3", time.Minute)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if requestURL.Scheme != "https" || requestURL.Host != tc.wantHost || requestURL.Path != tc.wantPath {
+				t.Fatalf("request URL = %s://%s%s, want https://%s%s", requestURL.Scheme, requestURL.Host, requestURL.Path, tc.wantHost, tc.wantPath)
+			}
+		})
+	}
+}
+
 type blockingTransport struct{}
 
 func (blockingTransport) RoundTrip(request *http.Request) (*http.Response, error) {
