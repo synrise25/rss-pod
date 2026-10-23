@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
-	edgetts "github.com/foresturquhart/edge-tts"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 
 	"github.com/synrise25/rss-pod/internal/config"
+	"github.com/synrise25/rss-pod/internal/edgetts"
 	"github.com/synrise25/rss-pod/internal/storage"
 	ttspkg "github.com/synrise25/rss-pod/internal/tts"
 )

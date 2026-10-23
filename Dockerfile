@@ -25,6 +25,7 @@ WORKDIR /app
 COPY --from=build /out/rss-pod /usr/local/bin/rss-pod
 COPY config.example.yaml /app/config.yaml
 COPY prompts /app/prompts
+COPY internal/edgetts/LICENSE internal/edgetts/NOTICE /app/licenses/edge-tts/
 
 USER rsspod
 EXPOSE 8080

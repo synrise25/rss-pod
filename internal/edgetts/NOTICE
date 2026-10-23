@@ -1,0 +1,15 @@
+This package is adapted from github.com/foresturquhart/edge-tts v1.0.1,
+a Go port of rany2/edge-tts, under LGPLv3. The unused CLI, file-saving,
+subtitle generation, and voice filtering APIs are omitted.
+
+The v2 Sec-MS-GEC token implementation in token.go and drm.go is adapted
+from rany2/edge-tts 7.3.0, src/edge_tts/drm.py, under LGPLv3:
+https://github.com/rany2/edge-tts/blob/7.3.0/src/edge_tts/drm.py
+Copyright (c) 2025- rany <rany@riseup.net>
+
+Local changes (2026-10-23): v2 tokens and version prefix, HTTP handshake
+diagnostics, bounded clock-skew retry, and protocol regression tests.
+The local copy is necessary because the Go upstream v1.0.1 still uses
+the rejected v1 handshake. Keep the client in Go; no Python runtime is needed.
+
+See LICENSE for the GNU Lesser General Public License version 3.
