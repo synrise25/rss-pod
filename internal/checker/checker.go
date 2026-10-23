@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	edgetts "github.com/foresturquhart/edge-tts"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/minio/minio-go/v7"
@@ -22,6 +21,7 @@ import (
 	"github.com/mmcdole/gofeed"
 
 	"github.com/synrise25/rss-pod/internal/config"
+	"github.com/synrise25/rss-pod/internal/edgetts"
 	ttspkg "github.com/synrise25/rss-pod/internal/tts"
 )
 

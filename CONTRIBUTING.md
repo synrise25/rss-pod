@@ -22,6 +22,13 @@ in CI against PostgreSQL. Locally, set `RSS_POD_TEST_DATABASE_URL` to a disposab
 PostgreSQL database before running `go test ./...` to include them. The tests
 create and remove isolated schemas; never point this variable at production.
 
+The Edge client in `internal/edgetts` is an LGPLv3 adaptation of the upstream
+Go client with the v2 handshake; its source attribution and license are kept
+in that directory. Protocol tests run offline. To also verify real synthesis
+with both Chinese voices, explicitly run
+`RSS_POD_EDGE_TTS_LIVE_TEST=1 go test ./internal/edgetts -run TestLiveSynthesis -v`.
+This contacts Microsoft's public Edge TTS service; `EDGE_TTS_PROXY` is optional.
+
 ## Pull requests
 
 - Keep changes focused and include tests for behavior changes.
