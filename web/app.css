@@ -537,7 +537,7 @@ input:focus-visible {
   background: #c7ddff;
 }
 
-.episode-play-button img {
+.episode-play-button svg {
   width: 34px;
   height: 34px;
   filter: var(--blue-icon-filter);
@@ -549,8 +549,18 @@ input:focus-visible {
   box-shadow: 0 8px 20px rgb(79 142 247 / 26%), inset 0 1px 0 rgb(255 255 255 / 38%);
 }
 
-.episode-row.is-playing .episode-play-button img {
+.episode-row.is-playing .episode-play-button svg {
   filter: brightness(0) invert(1);
+}
+
+/* Both symbols are inline so playback changes never wait for an image request. */
+.playback-icon .pause-symbol,
+.is-playing .playback-icon .play-symbol {
+  display: none;
+}
+
+.is-playing .playback-icon .pause-symbol {
+  display: inline;
 }
 
 .episode-source {
@@ -626,7 +636,7 @@ input:focus-visible {
   flex: 0 0 auto;
 }
 
-.icon-button img {
+.icon-button :is(img, svg) {
   width: 42px;
   height: 42px;
 }
@@ -648,7 +658,7 @@ input:focus-visible {
   background: linear-gradient(145deg, var(--blue-hover), var(--blue-pressed));
 }
 
-.icon-button-primary img {
+.icon-button-primary svg {
   width: 44px;
   height: 44px;
   filter: brightness(0) invert(1);
@@ -1102,7 +1112,7 @@ input:focus-visible {
     height: 48px;
   }
 
-  .episode-play-button img {
+  .episode-play-button svg {
     width: 29px;
     height: 29px;
   }
@@ -1190,7 +1200,7 @@ input:focus-visible {
     font-size: 12px;
   }
 
-  .icon-button img {
+  .icon-button :is(img, svg) {
     width: 30px;
     height: 30px;
   }
@@ -1200,7 +1210,7 @@ input:focus-visible {
     height: 52px;
   }
 
-  .icon-button-primary img {
+  .icon-button-primary svg {
     width: 30px;
     height: 30px;
   }
