@@ -270,7 +270,7 @@
   backdrop-filter: none;
 }
 
-:root:not([data-style="glacier"][data-appearance="day"]) :is(.episode-play-button, .icon-button-secondary) img {
+:root:not([data-style="glacier"][data-appearance="day"]) :is(.episode-play-button, .icon-button-secondary) :is(img, svg) {
   filter: var(--control-filter);
 }
 
@@ -286,7 +286,7 @@
   box-shadow: none;
 }
 
-:root:not([data-style="glacier"][data-appearance="day"]) :is(.icon-button-primary, .episode-row.is-playing .episode-play-button) img {
+:root:not([data-style="glacier"][data-appearance="day"]) :is(.icon-button-primary, .episode-row.is-playing .episode-play-button) svg {
   filter: var(--on-accent-filter);
 }
 

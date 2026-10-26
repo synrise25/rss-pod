@@ -154,7 +154,6 @@ const elements = {
   rowTemplate: document.querySelector("#episode-row-template"),
   audio: document.querySelector("#audio"),
   playToggle: document.querySelector("#play-toggle"),
-  playToggleIcon: document.querySelector("#play-toggle-icon"),
   previousButton: document.querySelector("#previous-button"),
   nextButton: document.querySelector("#next-button"),
   nowPlayingTitle: document.querySelector("#now-playing-title"),
@@ -394,13 +393,11 @@ function renderEpisodeList() {
     row.classList.toggle("is-playing", episode.id === state.currentEpisodeID && !elements.audio.paused);
 
     const playButton = row.querySelector(".episode-play-button");
-    const playIcon = row.querySelector(".episode-play-button img");
     const isPlaying = episode.id === state.currentEpisodeID && !elements.audio.paused;
     playButton.setAttribute(
       "aria-label",
       isPlaying ? copy.pauseEpisode(episode.title) : copy.playEpisode(episode.title),
     );
-    playIcon.src = isPlaying ? "/icons/pause.svg" : "/icons/play.svg";
     playButton.addEventListener("click", () => toggleEpisode(episode));
 
     row.tabIndex = 0;
@@ -620,7 +617,7 @@ function updateNextAudio() {
 
 function renderPlaybackState() {
   const playing = !elements.audio.paused;
-  elements.playToggleIcon.src = playing ? "/icons/pause.svg" : "/icons/play.svg";
+  elements.playToggle.classList.toggle("is-playing", playing);
   elements.playToggle.setAttribute("aria-label", playing ? copy.pause : copy.play);
   updateMediaSessionPlaybackState();
   updateMediaSessionPosition();
