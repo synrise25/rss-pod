@@ -17,6 +17,8 @@ import (
 
 type ScheduleSourcesArgs struct{}
 
+const sourceScheduleCatchUpWindow = time.Hour
+
 func (ScheduleSourcesArgs) Kind() string { return "schedule_sources" }
 func (ScheduleSourcesArgs) InsertOpts() river.InsertOpts {
 	return river.InsertOpts{Queue: "source", MaxAttempts: 5}
@@ -30,18 +32,36 @@ type ScheduleSourcesWorker struct {
 }
 
 func (w *ScheduleSourcesWorker) Work(ctx context.Context, _ *river.Job[ScheduleSourcesArgs]) error {
-	now := time.Now().UTC().Truncate(time.Minute)
-	dueSources, err := dueSourcesAt(w.Config, now)
-	if err != nil {
-		return permanent("resolve due sources: %v", err)
-	}
-
 	tx, err := w.Pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
-	for _, source := range dueSources {
+	// Lock a shared checkpoint so concurrent workers and retries cover the same
+	// interval atomically. On first startup, only evaluate the current minute.
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO scheduler_state (id, last_checked_at)
+		VALUES (true, date_trunc('minute', clock_timestamp()) - interval '1 minute')
+		ON CONFLICT (id) DO NOTHING
+	`); err != nil {
+		return fmt.Errorf("initialize scheduler checkpoint: %w", err)
+	}
+	var lastChecked, now time.Time
+	if err := tx.QueryRow(ctx, `
+		SELECT last_checked_at FROM scheduler_state WHERE id = true FOR UPDATE
+	`).Scan(&lastChecked); err != nil {
+		return fmt.Errorf("lock scheduler checkpoint: %w", err)
+	}
+	// Read the database clock after acquiring the lock. Transaction start time
+	// can be stale after waiting, and a worker's system clock may differ.
+	if err := tx.QueryRow(ctx, `SELECT date_trunc('minute', clock_timestamp())`).Scan(&now); err != nil {
+		return fmt.Errorf("read scheduler time: %w", err)
+	}
+	duePolls, err := dueSourcePolls(w.Config, lastChecked, now)
+	if err != nil {
+		return permanent("resolve due sources: %v", err)
+	}
+	for _, poll := range duePolls {
 		runID := uuid.New()
 		var insertedID string
 		err := tx.QueryRow(ctx, `
@@ -49,21 +69,20 @@ func (w *ScheduleSourcesWorker) Work(ctx context.Context, _ *river.Job[ScheduleS
 			VALUES ($1, $2, 'queued', $3)
 			ON CONFLICT (source_id, scheduled_for) WHERE scheduled_for IS NOT NULL DO NOTHING
 			RETURNING id::text
-		`, runID, source.ID, now).Scan(&insertedID)
+		`, runID, poll.SourceID, poll.ScheduledFor).Scan(&insertedID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			continue
 		}
 		if err != nil {
 			return fmt.Errorf("create scheduled source run: %w", err)
 		}
-		if _, err := w.River.InsertTx(ctx, tx, PollSourceArgs{SourceID: source.ID, RunID: insertedID}, nil); err != nil {
+		if _, err := w.River.InsertTx(ctx, tx, PollSourceArgs{SourceID: poll.SourceID, RunID: insertedID}, nil); err != nil {
 			return fmt.Errorf("enqueue scheduled source poll: %w", err)
 		}
 	}
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO scheduler_state (id, last_checked_at)
-		VALUES (true, $1)
-		ON CONFLICT (id) DO UPDATE SET last_checked_at = EXCLUDED.last_checked_at
+		UPDATE scheduler_state SET last_checked_at = GREATEST(last_checked_at, $1)
+		WHERE id = true
 	`, now); err != nil {
 		return fmt.Errorf("record scheduler tick: %w", err)
 	}
@@ -73,14 +92,25 @@ func (w *ScheduleSourcesWorker) Work(ctx context.Context, _ *river.Job[ScheduleS
 	return nil
 }
 
-func dueSourcesAt(cfg *config.Config, now time.Time) ([]config.SourceConfig, error) {
+type scheduledSourcePoll struct {
+	SourceID     string
+	ScheduledFor time.Time
+}
+
+// dueSourcePolls returns cron occurrences in (lastChecked, now], bounded to
+// the most recent hour. Keep their original timestamps for edition dates.
+func dueSourcePolls(cfg *config.Config, lastChecked, now time.Time) ([]scheduledSourcePoll, error) {
 	location, err := time.LoadLocation(cfg.Defaults.Schedule.Timezone)
 	if err != nil {
 		return nil, fmt.Errorf("load scheduler timezone: %w", err)
 	}
-	localNow := now.UTC().Truncate(time.Minute).In(location)
+	now = now.UTC().Truncate(time.Minute)
+	lastChecked = lastChecked.UTC().Truncate(time.Minute)
+	if earliest := now.Add(-sourceScheduleCatchUpWindow); lastChecked.Before(earliest) {
+		lastChecked = earliest
+	}
 	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-	due := make([]config.SourceConfig, 0)
+	var due []scheduledSourcePoll
 	for _, source := range cfg.Sources {
 		if !source.Enabled {
 			continue
@@ -89,8 +119,8 @@ func dueSourcesAt(cfg *config.Config, now time.Time) ([]config.SourceConfig, err
 		if err != nil {
 			return nil, fmt.Errorf("source %s cron: %w", source.ID, err)
 		}
-		if schedule.Next(localNow.Add(-time.Second)).Equal(localNow) {
-			due = append(due, source)
+		for scheduled := schedule.Next(lastChecked.In(location)); !scheduled.IsZero() && !scheduled.After(now); scheduled = schedule.Next(scheduled) {
+			due = append(due, scheduledSourcePoll{SourceID: source.ID, ScheduledFor: scheduled.UTC()})
 		}
 	}
 	return due, nil

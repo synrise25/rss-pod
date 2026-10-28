@@ -216,8 +216,8 @@ dialogue_profiles:
 
 defaults:
   schedule:
-    # The scheduler only evaluates the current minute and does not backfill missed cron runs.
-    # scheduler 只执行当前分钟命中的 cron，不补跑停机期间错过的时间点。
+    # Catch up missed cron runs from the last checkpoint, up to one hour, keeping their original dates.
+    # 从上次检查点补齐最近一小时内漏过的 cron，并保留原计划归属日期。
     timezone: Asia/Shanghai
 
   # This list defines available LLM services and their fallback order.

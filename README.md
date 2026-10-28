@@ -139,7 +139,9 @@ docker logs -f rss-pod
 
 `--sources` takes a source's `id`; `--limit 1` processes one RSS item. Generation
 runs asynchronously after enqueueing. Refresh the player when it finishes to
-listen. Subsequent polls follow the source's `schedule.cron`.
+listen. Subsequent polls follow the source's `schedule.cron`. After a scheduling
+delay or restart, missed polls from the last hour are caught up with their
+original edition dates; older missed polls require manual recovery.
 
 ### Other ways to run
 

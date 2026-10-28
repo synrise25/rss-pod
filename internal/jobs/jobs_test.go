@@ -564,7 +564,7 @@ func TestCallLLMRetryClassification(t *testing.T) {
 	}
 }
 
-func TestDueSourcesAtOnlyMatchesCurrentMinute(t *testing.T) {
+func TestDueSourcePollsMatchEnabledSources(t *testing.T) {
 	cfg := &config.Config{
 		Defaults: config.DefaultsConfig{
 			Schedule: config.ScheduleConfig{Timezone: "Asia/Shanghai"},
@@ -577,24 +577,24 @@ func TestDueSourcesAtOnlyMatchesCurrentMinute(t *testing.T) {
 	}
 
 	now := time.Date(2026, time.August, 23, 13, 50, 42, 0, time.UTC)
-	due, err := dueSourcesAt(cfg, now)
+	due, err := dueSourcePolls(cfg, now.Add(-time.Minute), now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(due) != 1 || due[0].ID != "due" {
-		t.Fatalf("dueSourcesAt() = %#v, want only source due", due)
+	if len(due) != 1 || due[0].SourceID != "due" || !due[0].ScheduledFor.Equal(now.Truncate(time.Minute)) {
+		t.Fatalf("dueSourcePolls() = %#v, want only source due at its cron time", due)
 	}
 
-	due, err = dueSourcesAt(cfg, now.Add(time.Minute))
+	due, err = dueSourcePolls(cfg, now, now.Add(time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(due) != 0 {
-		t.Fatalf("dueSourcesAt() one minute later = %#v, want no catch-up", due)
+		t.Fatalf("dueSourcePolls() next interval = %#v, want no repeated polls", due)
 	}
 }
 
-func TestDueSourcesAtRejectsInvalidCron(t *testing.T) {
+func TestDueSourcePollsRejectInvalidCron(t *testing.T) {
 	cfg := &config.Config{
 		Defaults: config.DefaultsConfig{
 			Schedule: config.ScheduleConfig{Timezone: "UTC"},
@@ -604,8 +604,9 @@ func TestDueSourcesAtRejectsInvalidCron(t *testing.T) {
 		},
 	}
 
-	if _, err := dueSourcesAt(cfg, time.Now()); err == nil {
-		t.Fatal("dueSourcesAt() accepted an invalid cron expression")
+	now := time.Now()
+	if _, err := dueSourcePolls(cfg, now.Add(-time.Minute), now); err == nil {
+		t.Fatal("dueSourcePolls() accepted an invalid cron expression")
 	}
 }
 
