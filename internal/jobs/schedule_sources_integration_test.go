@@ -112,18 +112,36 @@ func TestSchedulerFirstEnqueueFailureKeepsBaselineIntegration(t *testing.T) {
 func TestSchedulerFirstStartAndClockRegressionIntegration(t *testing.T) {
 	worker, _ := schedulerTestWorker(t)
 	ctx := context.Background()
+	// Capture the actual initialization boundary. The first tick can correctly
+	// cover two minutes if initialization and the locked clock read straddle one.
+	if _, err := worker.Pool.Exec(ctx, `
+		CREATE TABLE scheduler_initial_baseline(last_checked_at timestamptz NOT NULL);
+		CREATE FUNCTION record_scheduler_baseline() RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN
+		    INSERT INTO scheduler_initial_baseline VALUES (NEW.last_checked_at);
+		    RETURN NEW;
+		END;
+		$$;
+		CREATE TRIGGER record_scheduler_baseline AFTER INSERT ON scheduler_state
+		FOR EACH ROW EXECUTE FUNCTION record_scheduler_baseline();
+	`); err != nil {
+		t.Fatal(err)
+	}
 	if err := worker.Work(ctx, nil); err != nil {
 		t.Fatal(err)
 	}
 	var count int
-	var checkpoint time.Time
-	if err := worker.Pool.QueryRow(ctx, `SELECT last_checked_at,(SELECT count(*) FROM source_runs) FROM scheduler_state`).Scan(&checkpoint, &count); err != nil {
+	var checkpoint, baseline time.Time
+	if err := worker.Pool.QueryRow(ctx, `SELECT s.last_checked_at,b.last_checked_at,(SELECT count(*) FROM source_runs)
+		FROM scheduler_state s CROSS JOIN scheduler_initial_baseline b`).Scan(&checkpoint, &baseline, &count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 1 {
-		t.Fatalf("first start created %d polls, want current minute only", count)
+	expected := int(checkpoint.Sub(baseline) / time.Minute)
+	if expected < 1 || count != expected {
+		t.Fatalf("first start created %d polls, want %d in (%s,%s]", count, expected, baseline, checkpoint)
 	}
-	assertSchedulerPoll(t, worker, checkpoint)
+	assertSchedulerPollInterval(t, worker, baseline, checkpoint, expected)
+	initialCheckpoint := checkpoint
 	future := checkpoint.Add(10 * time.Minute)
 	if _, err := worker.Pool.Exec(ctx, `UPDATE scheduler_state SET last_checked_at=$1`, future); err != nil {
 		t.Fatal(err)
@@ -137,7 +155,24 @@ func TestSchedulerFirstStartAndClockRegressionIntegration(t *testing.T) {
 	if !checkpoint.Equal(future) {
 		t.Fatalf("checkpoint regressed to %s, want %s", checkpoint, future)
 	}
-	assertSchedulerPoll(t, worker, future.Add(-10*time.Minute))
+	assertSchedulerPollInterval(t, worker, baseline, initialCheckpoint, expected)
+}
+
+func assertSchedulerPollInterval(t *testing.T, worker *ScheduleSourcesWorker, start, end time.Time, expected int) {
+	t.Helper()
+	var runs, jobs, matched int
+	if err := worker.Pool.QueryRow(context.Background(), `
+		SELECT (SELECT count(*) FROM source_runs),
+		       (SELECT count(*) FROM river_job WHERE kind='poll_source'),
+		       (SELECT count(*) FROM generate_series($1::timestamptz+interval '1 minute',$2,interval '1 minute') occurrence
+		        JOIN source_runs r ON r.scheduled_for=occurrence AND r.source_id='test'
+		        JOIN river_job j ON j.args->>'run_id'=r.id::text AND j.kind='poll_source')
+	`, start, end).Scan(&runs, &jobs, &matched); err != nil {
+		t.Fatal(err)
+	}
+	if runs != expected || jobs != expected || matched != expected {
+		t.Fatalf("runs=%d jobs=%d matching occurrences=%d, want %d each", runs, jobs, matched, expected)
+	}
 }
 
 func schedulerTestWorker(t *testing.T) (*ScheduleSourcesWorker, time.Time) {
