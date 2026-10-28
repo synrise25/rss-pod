@@ -79,6 +79,36 @@ func TestSchedulerRollbackDoesNotLoseMissedPollIntegration(t *testing.T) {
 	assertSchedulerPoll(t, worker, scheduled)
 }
 
+func TestSchedulerFirstEnqueueFailureKeepsBaselineIntegration(t *testing.T) {
+	worker, _ := schedulerTestWorker(t)
+	ctx := context.Background()
+	if _, err := worker.Pool.Exec(ctx, `ALTER TABLE river_job ADD CONSTRAINT reject_poll CHECK(kind <> 'poll_source')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := worker.Work(ctx, nil); err == nil {
+		t.Fatal("initial enqueue unexpectedly succeeded")
+	}
+	var baseline time.Time
+	var count int
+	if err := worker.Pool.QueryRow(ctx, `SELECT last_checked_at,(SELECT count(*) FROM source_runs) FROM scheduler_state`).Scan(&baseline, &count); err != nil {
+		t.Fatalf("initial baseline must survive a failed enqueue: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("failed initial enqueue left %d source runs", count)
+	}
+	// Retry a daily occurrence at the original first-start minute. The persisted
+	// baseline keeps it eligible even if this retry crosses a minute boundary.
+	scheduled := baseline.UTC().Add(time.Minute)
+	worker.Config.Sources[0].Schedule.Cron = fmt.Sprintf("%d %d * * *", scheduled.Minute(), scheduled.Hour())
+	if _, err := worker.Pool.Exec(ctx, `ALTER TABLE river_job DROP CONSTRAINT reject_poll`); err != nil {
+		t.Fatal(err)
+	}
+	if err := worker.Work(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	assertSchedulerPoll(t, worker, scheduled)
+}
+
 func TestSchedulerFirstStartAndClockRegressionIntegration(t *testing.T) {
 	worker, _ := schedulerTestWorker(t)
 	ctx := context.Background()

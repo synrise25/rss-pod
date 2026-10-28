@@ -32,20 +32,22 @@ type ScheduleSourcesWorker struct {
 }
 
 func (w *ScheduleSourcesWorker) Work(ctx context.Context, _ *river.Job[ScheduleSourcesArgs]) error {
-	tx, err := w.Pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-	// Lock a shared checkpoint so concurrent workers and retries cover the same
-	// interval atomically. On first startup, only evaluate the current minute.
-	if _, err := tx.Exec(ctx, `
+	// Persist the first baseline separately: a failed first enqueue must not
+	// erase it and exclude that minute when the job retries in a later minute.
+	if _, err := w.Pool.Exec(ctx, `
 		INSERT INTO scheduler_state (id, last_checked_at)
 		VALUES (true, date_trunc('minute', clock_timestamp()) - interval '1 minute')
 		ON CONFLICT (id) DO NOTHING
 	`); err != nil {
 		return fmt.Errorf("initialize scheduler checkpoint: %w", err)
 	}
+	tx, err := w.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	// Lock the shared checkpoint so concurrent workers and retries cover the
+	// same interval atomically. First startup evaluates only the current minute.
 	var lastChecked, now time.Time
 	if err := tx.QueryRow(ctx, `
 		SELECT last_checked_at FROM scheduler_state WHERE id = true FOR UPDATE
