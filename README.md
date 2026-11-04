@@ -204,6 +204,10 @@ Screening is disabled by default. To enable it, set `enabled` to `true` under
 `defaults.screening` or a source's `screening`. Set `services` to an independent,
 ordered chain such as `[llm.deepseek]` or `[jev, llm.deepseek]`. Sources can
 override the defaults; see [`config.example.yaml`](config.example.yaml) for fields.
+The general policy also keeps lighthearted topics with concrete stories, humor,
+or relatable experiences; technical depth is not required. Repetitive filler with
+no material to develop, and promotional posts lacking independent content, are
+still filtered out.
 
 A valid allow/skip decision ends screening. Provider failures try the next
 service; if all fail, the task retries. Skipped content produces no script or

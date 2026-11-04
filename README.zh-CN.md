@@ -180,6 +180,8 @@ python3 -c 'import base64, secrets; print(base64.b32encode(secrets.token_bytes(2
 筛选默认关闭。需要时，在 `defaults.screening` 或来源的 `screening` 中将 `enabled` 设为
 `true`；`services` 设置独立的有序筛选链，例如 `[llm.deepseek]` 或 `[jev, llm.deepseek]`。
 来源可覆盖默认规则；配置字段见 [`config.example.yaml`](config.example.yaml)。
+通用规则也保留有具体故事、幽默反差或生活共鸣的轻松话题，不要求技术干货；
+纯刷屏、缺少可展开素材的重复内容和以推广为主且缺少独立内容的帖子仍会筛除。
 
 有效的保留／跳过判断立即结束筛选；服务失败会尝试下一项，全部失败则重试。
 被跳过的内容不生成脚本或音频，可在管理员页面查看原因。

@@ -15,7 +15,7 @@ import (
 )
 
 const jevScreeningQuestion = `
-应按整体内容是否足以支撑实质播客讨论判断。如果大部分内容都是推广、邀请码互助或拉新，少量零散技术讨论不足以支撑播客，仍应跳过。
+应按能否提炼出足够可讲述或可讨论的节目素材判断，包括故事、幽默反差和生活共鸣，不要求技术分析。如果大部分内容都是推广、邀请码互助或拉新，且少量零散讨论不足以支撑播客，仍应跳过。
 问题：是否有充分依据跳过这份资料，不为它生成播客？`
 
 // Explicit chains fall through on provider failures, never on a valid decision.
@@ -129,7 +129,7 @@ func screenWithJev(ctx context.Context, service config.LLMService, input screeni
 // Keep the exact question in both the request and cache key.
 func jevQuestion(instructions string) map[string]any {
 	return map[string]any{"type": "noul", "instructions": instructions, "criteria": map[string]string{
-		"true":  "整体缺乏足够实质内容，符合跳过条件。",
-		"false": "整体具有足够实质讨论价值，或没有充分依据跳过。",
+		"true":  "缺乏足够可讲述或可讨论的素材，或命中补充选题要求的明确排除条件，有充分依据跳过。",
+		"false": "有足够的信息、故事、幽默或讨论素材，且未命中明确排除条件；或没有充分依据跳过。",
 	}}
 }
