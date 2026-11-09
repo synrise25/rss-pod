@@ -50,7 +50,7 @@ function fixture() {
     document: { createDocumentFragment: () => Object.assign(new Element(), { fragment: true }) },
     visibleEpisodes: () => episodes, sourceName: () => 'Source',
     setStatus() {}, renderEpisodeDuration() {}, updateQueueButtons() {},
-    updateMediaSessionPlaybackState() {}, updateMediaSessionPosition() {},
+    syncMediaSessionState() {},
     registerMediaSessionActions() {}, scrollCurrentEpisodeIntoView() {},
     updateNextAudio() {}, clearNextAudio() {},
   });

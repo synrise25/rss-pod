@@ -10,6 +10,7 @@ function fixture() {
     constructor() {
       super();
       this.paused = true;
+      this.muted = false;
       this.duration = 30;
       this.buffered = { length: 1, start: () => 0, end: () => 30 };
       this.loads = 0;
@@ -33,7 +34,7 @@ function fixture() {
     clearMediaSessionPosition() {}, applyPlaybackRate() {}, updateMediaSession() {},
     renderEpisodeList() {}, scrollCurrentEpisodeIntoView() {}, safePlay() {},
     renderPlaybackState() {}, moveInQueue() {}, updateProgress() {},
-    updateMediaSessionPosition() {}, persistResumeState() {},
+    syncMediaSessionState() {}, persistResumeState() {},
   });
   for (const name of ['selectEpisode', 'bindAudioEvents', 'releaseAudio', 'clearNextAudio', 'updateNextAudio', 'isAudioFullyBuffered', 'updateProgress', 'formatDuration']) {
     const start = source.indexOf(`function ${name}(`);
@@ -61,6 +62,7 @@ test('waits for a full continuous buffer and active playback', () => {
   c.updateNextAudio();
   assert.equal(c.nextAudio.episodeID, 'b');
   assert.equal(c.nextAudio.audio.preload, 'auto');
+  assert.equal(c.nextAudio.audio.muted, true);
   c.updateNextAudio();
   assert.equal(created.length, 2);
 });
@@ -90,6 +92,7 @@ test('next playback reuses the exact buffered element without calling load again
   assert.equal(c.nextAudio, null);
   assert.equal(cached.id, 'audio');
   assert.equal(cached.defaultPlaybackRate, 1.5);
+  assert.equal(cached.muted, false);
   assert.equal(c.elements.progress.value, '0');
   assert.equal(c.elements.elapsedTime.textContent, '0:00');
   assert.equal(c.elements.remainingTime.textContent, '-0:30');
