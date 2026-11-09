@@ -4,196 +4,126 @@ const { readFileSync } = require('node:fs');
 const vm = require('node:vm');
 
 const source = readFileSync(require('node:path').join(__dirname, '../app.js'), 'utf8');
+const safari = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0.1 Mobile/15E148 Safari/604.1';
+const chrome = 'Mozilla/5.0 AppleWebKit/537.36 Chrome/144.0.0.0 Safari/537.36';
 
-function fixture() {
-  class Audio extends EventTarget {
-    constructor() {
-      super();
-      this.paused = true;
-      this.ended = false;
-      this.muted = false;
-      this.duration = 120;
-      this.currentTime = 12;
-      this.playbackRate = 1.5;
-      this.buffered = { length: 0 };
-      this.plays = 0;
-    }
-    play() {
-      this.plays++;
-      if (this.playError) return Promise.reject(this.playError);
-      if (this.paused) {
-        this.paused = false;
-        this.dispatchEvent(new Event('play'));
-      }
-      return this.pendingPlay || Promise.resolve();
-    }
-    pause() {
-      if (this.paused) return;
-      this.paused = true;
-      this.dispatchEvent(new Event('pause'));
-    }
-    load() {}
-    removeAttribute(name) { delete this[name]; }
-    replaceWith() {}
-  }
-  const audio = new Audio();
-  const publications = [];
+function fixture(userAgent = chrome) {
+  const audio = new EventTarget();
+  Object.assign(audio, { paused: true, ended: false, duration: 120, currentTime: 12, playbackRate: 1.5 });
+  audio.play = async () => { audio.paused = false; audio.dispatchEvent(new Event('play')); };
+  audio.pause = () => { audio.paused = true; audio.dispatchEvent(new Event('pause')); };
   const actions = {};
+  const positions = [];
+  const registrations = [];
+  const writes = [];
+  let playbackState = 'none';
   const session = {
-    playbackState: 'none',
-    setPositionState(position) {
-      publications.push({ playbackState: this.playbackState, ...position });
-    },
-    setActionHandler(action, handler) { actions[action] = handler; },
+    get playbackState() { return playbackState; },
+    set playbackState(value) { writes.push(value); playbackState = value; },
+    setPositionState(position) { positions.push(position); },
+    setActionHandler(action, handler) { registrations.push(action); actions[action] = handler; },
   };
-  const queue = ['a', 'b'].map(id => ({ id, audioURL: `https://media.example/${id}.mp3` }));
-  const document = new EventTarget();
-  document.hidden = false;
   const context = vm.createContext({
-    Audio, AbortController, document, navigator: { mediaSession: session },
+    AbortController, window: {}, navigator: { mediaSession: session, userAgent },
     elements: { audio, playToggle: { classList: { toggle() {} }, setAttribute() {} } },
-    state: { currentEpisodeID: 'a', speed: 1.5 },
-    copy: { play: 'Play', pause: 'Pause' },
-    isAdminPage: false, adminCSRF: '', audioEvents: null, nextAudio: null,
-    visibleEpisodes: () => queue, isDemoMode: () => true,
-    renderEpisodeList() {}, scrollCurrentEpisodeIntoView() {}, updateGreeting() {},
-    updateProgress() {}, persistResumeState() {}, applyPlaybackRate() {}, moveInQueue() {},
+    state: { currentEpisodeID: 'a' }, audioEvents: null,
+    copy: { play: 'Play', pause: 'Pause', mediaAlbum: 'Podcasts' }, MEDIA_ARTWORK: [], DEFAULT_SEEK_OFFSET: 10,
+    sourceName: () => 'Source', isDemoMode: () => true,
+    renderEpisodeList() {}, scrollCurrentEpisodeIntoView() {}, applyPlaybackRate() {},
+    updateProgress() {}, persistResumeState() {}, updateNextAudio() {}, clearNextAudio() {},
+    moveInQueue() {},
   });
   for (const name of [
-    'safePlay', 'bindAudioEvents', 'renderPlaybackState', 'syncMediaSessionState',
-    'getMediaSession', 'updateMediaSessionPlaybackState', 'updateMediaSessionPosition',
-    'registerMediaSessionActions', 'updateNextAudio', 'isAudioFullyBuffered',
-    'clearNextAudio', 'releaseAudio',
+    'safePlay', 'bindAudioEvents', 'renderPlaybackState', 'getMediaSession',
+    'updateMediaSession', 'updateMediaSessionPlaybackState', 'updateMediaSessionPosition',
+    'registerMediaSessionActions', 'useNativeMediaSessionControls', 'seekBy', 'seekTo',
   ]) {
     const match = source.match(new RegExp(`(?:async )?function ${name}\\(`));
     const rest = source.slice(match.index);
     vm.runInContext(rest.slice(0, rest.indexOf('\n}\n') + 3), context);
   }
-  const visibilityListener = source.slice(source.indexOf('document.addEventListener("visibilitychange"'));
-  vm.runInContext(visibilityListener.slice(0, visibilityListener.indexOf('\n});') + 4), context);
   context.bindAudioEvents();
-  context.registerMediaSessionActions();
-  return { context, audio, session, publications, actions, document };
+  context.updateMediaSession({ title: 'Episode', sourceID: 'source', durationSeconds: 120 });
+  return { context, audio, session, actions, positions, registrations, writes };
 }
 
-function assertSession(f, playbackState, position = f.audio.currentTime) {
-  assert.equal(f.session.playbackState, playbackState);
-  assert.deepEqual(f.publications.at(-1), {
-    playbackState, duration: f.audio.duration, playbackRate: f.audio.playbackRate, position,
-  });
-}
-
-test('actual playback repairs a state reset after the initial play event', async () => {
-  const f = fixture();
-  await f.context.safePlay();
-  f.session.playbackState = 'paused';
-  f.audio.dispatchEvent(new Event('playing'));
-  assertSession(f, 'playing');
-});
-
-test('progress repairs stale system state before publishing the advancing position', () => {
-  const f = fixture();
-  f.audio.paused = false;
-  f.session.playbackState = 'paused';
-  f.audio.currentTime = 35;
-  f.audio.dispatchEvent(new Event('timeupdate'));
-  assertSession(f, 'playing', 35);
-  f.audio.pause();
-  assertSession(f, 'paused', 35);
-});
-
-test('system play on already playing audio repairs state without restarting it', async () => {
-  const f = fixture();
-  f.audio.paused = false;
-  f.session.playbackState = 'paused';
-  await f.actions.play();
-  assertSession(f, 'playing', 12);
-  assert.equal(f.audio.plays, 1);
-  f.actions.pause();
-  assert.equal(f.audio.paused, true);
-  assertSession(f, 'paused', 12);
-  f.session.playbackState = 'playing';
-  f.actions.pause();
-  assertSession(f, 'paused', 12);
-});
-
-test('failed play and a pause during a pending play never report playing', async () => {
-  const f = fixture();
-  f.audio.playError = new Error('Playback denied');
-  f.session.playbackState = 'playing';
-  await f.context.safePlay();
-  assertSession(f, 'paused');
-  f.audio.playError = null;
-  let resolvePlay;
-  f.audio.pendingPlay = new Promise(resolve => { resolvePlay = resolve; });
-  const playing = f.context.safePlay();
-  f.audio.pause();
-  resolvePlay();
-  await playing;
-  assertSession(f, 'paused');
-});
-
-test('returning to the page repairs both playing and paused system state', () => {
-  const f = fixture();
-  for (const paused of [false, true]) {
-    f.audio.paused = paused;
-    f.session.playbackState = paused ? 'playing' : 'paused';
-    f.document.dispatchEvent(new Event('visibilitychange'));
-    assertSession(f, paused ? 'paused' : 'playing');
+test('WebKit retains native transport controls and receives no declared state writes', async () => {
+  for (const agent of [safari, safari.replace('Version/27.0.1', 'CriOS/144.0.0.0'), safari.replace('Version/27.0.1', 'FxiOS/145.0')]) {
+    const f = fixture(agent);
+    assert.equal(f.actions.play, null);
+    assert.equal(f.actions.pause, null);
+    assert.equal(f.session.metadata.title, 'Episode');
+    await f.context.safePlay();
+    f.audio.dispatchEvent(new Event('playing'));
+    f.audio.dispatchEvent(new Event('timeupdate'));
+    f.audio.pause();
+    assert.deepEqual(f.writes, []);
+    assert.equal(f.audio.paused, true);
   }
 });
 
-test('metadata, seeking and speed changes publish the active timeline', () => {
-  const f = fixture();
-  f.audio.paused = false;
-  for (const type of ['loadedmetadata', 'durationchange', 'seeked', 'ratechange']) {
-    f.session.playbackState = 'paused';
+test('WebKit still receives duration, progress, seeks and playback speed', async () => {
+  const f = fixture(safari);
+  await f.context.safePlay();
+  for (const type of ['loadedmetadata', 'durationchange', 'timeupdate', 'seeked', 'ratechange']) {
     f.audio.currentTime += 5;
     f.audio.dispatchEvent(new Event(type));
-    assertSession(f, 'playing');
+    assert.deepEqual({ ...f.positions.at(-1) }, { duration: 120, position: f.audio.currentTime, playbackRate: 1.5 });
+  }
+  assert.deepEqual(f.writes, []);
+});
+
+test('WebKit keeps queue navigation and seek actions while native transport is used', () => {
+  const f = fixture(safari);
+  const moves = [];
+  f.context.moveInQueue = offset => moves.push(offset);
+  f.actions.nexttrack();
+  f.actions.previoustrack();
+  assert.deepEqual(moves, [1, -1]);
+  f.actions.seekto({ seekTime: 50 });
+  assert.equal(f.audio.currentTime, 50);
+  f.actions.seekbackward({ seekOffset: 10 });
+  assert.equal(f.audio.currentTime, 40);
+  f.actions.seekforward({});
+  assert.equal(f.audio.currentTime, 50);
+});
+
+test('Chromium and partial embedded clients retain scripted play and pause actions', async () => {
+  for (const agent of [chrome, 'Mozilla/5.0 (Linux; Android 12) AppleWebKit/534.30 Version/4.0 Safari/534.30', '']) {
+    const f = fixture(agent);
+    assert.equal(typeof f.actions.play, 'function');
+    assert.equal(typeof f.actions.pause, 'function');
+    await f.actions.play();
+    assert.equal(f.audio.paused, false);
+    assert.equal(f.session.playbackState, 'playing');
+    f.actions.pause();
+    assert.equal(f.audio.paused, true);
+    assert.equal(f.session.playbackState, 'paused');
   }
 });
 
-test('ending the queue leaves system controls paused at the end of the track', () => {
+test('play and pause events leave registered system actions in place', async () => {
   const f = fixture();
-  f.audio.currentTime = f.audio.duration;
+  const count = f.registrations.length;
+  await f.context.safePlay();
+  f.audio.pause();
+  await f.context.safePlay();
+  assert.equal(f.registrations.length, count);
+});
+
+test('ending in the background keeps native state ownership and advances the queue once', () => {
+  const f = fixture(safari);
+  let advances = 0;
+  f.context.moveInQueue = () => advances++;
   f.audio.ended = true;
-  f.session.playbackState = 'playing';
+  f.audio.currentTime = f.audio.duration;
+  f.audio.dispatchEvent(new Event('pause'));
   f.audio.dispatchEvent(new Event('ended'));
-  assertSession(f, 'paused', 120);
+  assert.equal(advances, 1);
+  assert.deepEqual(f.writes, []);
 });
 
-test('silent preloading does not publish its pause, metadata or progress', () => {
-  const f = fixture();
-  f.audio.paused = false;
-  f.audio.buffered = { length: 1, start: () => 0, end: () => 120 };
-  f.audio.dispatchEvent(new Event('progress'));
-  const preload = f.context.nextAudio.audio;
-  assert.equal(preload.muted, true);
-  f.context.syncMediaSessionState();
-  const count = f.publications.length;
-  for (const type of ['pause', 'loadedmetadata', 'timeupdate']) {
-    preload.dispatchEvent(new Event(type));
-  }
-  assert.equal(f.publications.length, count);
-  assertSession(f, 'playing');
-});
-
-test('a discarded element finishing play does not update the new media session', async () => {
-  const f = fixture();
-  let resolvePlay;
-  f.audio.pendingPlay = new Promise(resolve => { resolvePlay = resolve; });
-  const playing = f.context.safePlay();
-  f.context.elements.audio = { paused: true };
-  f.session.playbackState = 'paused';
-  const count = f.publications.length;
-  resolvePlay();
-  await playing;
-  assert.equal(f.publications.length, count);
-  assert.equal(f.session.playbackState, 'paused');
-});
-
-test('missing or partial media session APIs do not prevent playback', async () => {
+test('missing and partial media-session capabilities do not interrupt playback', async () => {
   for (const mediaSession of [undefined, {}, {
     playbackState: 'none',
     setPositionState() { throw new Error('Unsupported'); },
@@ -201,8 +131,8 @@ test('missing or partial media session APIs do not prevent playback', async () =
   }]) {
     const f = fixture();
     f.context.navigator.mediaSession = mediaSession;
+    f.context.updateMediaSession({ title: 'Episode', sourceID: 'source', durationSeconds: 120 });
     await f.context.safePlay();
-    f.audio.dispatchEvent(new Event('playing'));
     assert.equal(f.audio.paused, false);
     f.audio.pause();
   }

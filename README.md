@@ -171,6 +171,9 @@ The player groups episodes by their task's edition date; overnight queueing and
 retries do not change it. Set the timezone with `defaults.schedule.timezone`.
 The player opens the latest date with playable episodes and preloads the next
 episode to reduce switching delays. Preloading lasts only for the current page.
+Cross-origin audio must allow CORS downloads; otherwise, playback uses the original
+audio URL when switching episodes. If a reverse proxy sets a CSP, allow connections
+to the audio origin and allow `blob:` in `media-src`.
 
 Use **Theme** in the top-right corner to choose Silver Signal, Smoked Crystal,
 or the original Glacier style, with day, night, or system appearance. The default

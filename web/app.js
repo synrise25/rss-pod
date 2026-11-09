@@ -13,6 +13,7 @@ let adminCSRF = "";
 let adminSessionTimer;
 let adminBusy = false;
 let nextAudio = null;
+let activeAudioObjectURL = null;
 let audioEvents = null;
 const localeKey = (/^(?:\/admin)?\/zh-cn(?:\/|$)/i.test(window.location.pathname) || window.location.pathname === "/admin") ? "zh-CN" : "en";
 const copy = {
@@ -188,10 +189,7 @@ window.addEventListener("resize", fitDateTabs);
 document.fonts?.ready.then(fitDateTabs);
 window.setInterval(updateGreeting, 60_000);
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) {
-    updateGreeting();
-    if (state.currentEpisodeID) syncMediaSessionState();
-  }
+  if (!document.hidden) updateGreeting();
 });
 
 bindPlayerEvents();
@@ -475,23 +473,16 @@ function selectEpisode(episode, { autoplay = false, resumeAt = 0 } = {}) {
   state.currentEpisodeID = episode.id;
   state.restoringResume = resumeAt > 0;
   clearMediaSessionPosition();
-  const prefetched = nextAudio?.episodeID === episode.id && nextAudio.url === episode.audioURL && !nextAudio.audio.error
-    ? nextAudio.audio : null;
-  if (prefetched) {
-    nextAudio = null;
-    audioEvents?.abort();
-    const previous = elements.audio;
-    prefetched.id = previous.id;
-    previous.replaceWith(prefetched);
-    elements.audio = prefetched;
-    releaseAudio(previous);
-    bindAudioEvents();
-    prefetched.muted = previous.muted;
-  } else {
-    clearNextAudio();
-    // Remove pending resume handlers from the previous selection too.
-    bindAudioEvents();
-  }
+  const prefetched = nextAudio?.episodeID === episode.id && nextAudio.url === episode.audioURL
+    ? nextAudio.objectURL : null;
+  // Transfer the completed download before cancelling the old preload. Keep
+  // one media element for the whole page so iOS has one Now Playing session.
+  if (prefetched) nextAudio.objectURL = null;
+  clearNextAudio();
+  const previousObjectURL = activeAudioObjectURL;
+  activeAudioObjectURL = prefetched || null;
+  // Remove pending resume handlers from the previous selection too.
+  bindAudioEvents();
   elements.audio.defaultPlaybackRate = state.speed;
   if (resumeAt > 0) {
     const resumeEpisodeID = episode.id;
@@ -505,11 +496,10 @@ function selectEpisode(episode, { autoplay = false, resumeAt = 0 } = {}) {
       { once: true, signal: audioEvents.signal },
     );
   }
-  if (!prefetched) {
-    elements.audio.preload = autoplay ? "auto" : "metadata";
-    elements.audio.src = episode.audioURL;
-    elements.audio.load();
-  }
+  elements.audio.preload = autoplay ? "auto" : "metadata";
+  elements.audio.src = prefetched || episode.audioURL;
+  elements.audio.load();
+  if (previousObjectURL) URL.revokeObjectURL(previousObjectURL);
   applyPlaybackRate();
   document.title = episode.title;
   elements.nowPlayingTitle.textContent = episode.title;
@@ -525,16 +515,11 @@ function selectEpisode(episode, { autoplay = false, resumeAt = 0 } = {}) {
 }
 
 async function safePlay() {
-  const audio = elements.audio;
   try {
-    audio.preload = "auto";
-    await audio.play();
+    elements.audio.preload = "auto";
+    await elements.audio.play();
   } catch (error) {
     if (!isDemoMode()) console.error("play audio", error);
-  } finally {
-    // play() on an already playing element emits no new play event. System
-    // controls must still be repaired if their state has fallen behind.
-    if (elements.audio === audio) syncMediaSessionState();
   }
 }
 
@@ -555,52 +540,43 @@ function bindPlayerEvents() {
   }
 }
 
-// Only the active element owns playback handlers. The detached preloader stays silent.
+// Playback handlers stay on the same element across every episode selection.
 function bindAudioEvents() {
   audioEvents?.abort();
   audioEvents = new AbortController();
   const on = (type, listener) => elements.audio.addEventListener(type, listener, { signal: audioEvents.signal });
   on("play", renderPlaybackState);
   on("pause", renderPlaybackState);
-  on("playing", syncMediaSessionState);
-  on("ended", () => {
-    renderPlaybackState();
-    moveInQueue(1);
-  });
+  on("ended", () => moveInQueue(1));
   on("loadedmetadata", () => {
     applyPlaybackRate();
     updateProgress();
-    syncMediaSessionState();
+    updateMediaSessionPosition();
   });
   on("durationchange", () => {
     updateProgress();
-    syncMediaSessionState();
+    updateMediaSessionPosition();
   });
   on("timeupdate", () => {
     updateProgress();
-    syncMediaSessionState();
+    updateMediaSessionPosition();
     persistResumeState();
   });
-  on("seeked", syncMediaSessionState);
-  on("ratechange", syncMediaSessionState);
+  on("seeked", updateMediaSessionPosition);
+  on("ratechange", updateMediaSessionPosition);
   for (const event of ["progress", "canplaythrough", "suspend", "playing", "timeupdate"]) {
     on(event, updateNextAudio);
   }
   on("waiting", () => {
-    if (nextAudio && !isAudioFullyBuffered(nextAudio.audio)) clearNextAudio();
+    if (nextAudio && !nextAudio.objectURL) clearNextAudio();
   });
   on("error", clearNextAudio);
 }
 
-function releaseAudio(audio) {
-  audio.pause();
-  audio.removeAttribute("src");
-  audio.load();
-}
-
 function clearNextAudio() {
   if (!nextAudio) return;
-  releaseAudio(nextAudio.audio);
+  nextAudio.controller.abort();
+  if (nextAudio.objectURL) URL.revokeObjectURL(nextAudio.objectURL);
   nextAudio = null;
 }
 
@@ -620,22 +596,33 @@ function updateNextAudio() {
   // canplaythrough is only an estimate. Require a continuous buffer for the
   // entire track before allowing background traffic to compete with playback.
   if (audio.paused || audio.ended || audio.error || !isAudioFullyBuffered(audio)) return;
-  const preload = new Audio();
-  nextAudio = { episodeID: next.id, url: next.audioURL, audio: preload };
-  // A paused preloader must not compete with the active system media controls.
-  preload.muted = true;
-  preload.preload = "auto";
-  preload.src = next.audioURL;
-  preload.load();
+  const preload = { episodeID: next.id, url: next.audioURL, controller: new AbortController(), objectURL: null };
+  nextAudio = preload;
+  // Download bytes, never a second audio element: even a paused or muted
+  // element has its own WebKit media session and can disturb Now Playing.
+  preload.promise = downloadNextAudio(preload);
   // Keep failed attempts until the queue changes; do not retry on every timeupdate.
+}
+
+async function downloadNextAudio(preload) {
+  try {
+    const response = await fetch(preload.url, { signal: preload.controller.signal });
+    if (!response.ok) return;
+    const blob = await response.blob();
+    if (nextAudio !== preload || preload.controller.signal.aborted || !blob.size) return;
+    preload.objectURL = URL.createObjectURL(blob);
+  } catch {
+    // Preloading is optional. CORS, network and cancellation failures fall back
+    // to the original media URL without interrupting the current episode.
+  }
 }
 
 function renderPlaybackState() {
   const playing = !elements.audio.paused;
   elements.playToggle.classList.toggle("is-playing", playing);
   elements.playToggle.setAttribute("aria-label", playing ? copy.pause : copy.play);
-  syncMediaSessionState();
-  registerMediaSessionActions();
+  updateMediaSessionPlaybackState();
+  updateMediaSessionPosition();
   renderEpisodeList();
   scrollCurrentEpisodeIntoView();
 }
@@ -996,11 +983,10 @@ function registerMediaSessionActions() {
   const mediaSession = getMediaSession();
   if (!mediaSession || typeof mediaSession.setActionHandler !== "function") return;
   const handlers = {
-    play: () => safePlay(),
-    pause: () => {
-      elements.audio.pause();
-      syncMediaSessionState();
-    },
+    // Safari must retain the element's native transport handlers. Its DOM
+    // Media Session and the element have separate platform playback states.
+    play: useNativeMediaSessionControls() ? null : () => safePlay(),
+    pause: useNativeMediaSessionControls() ? null : () => elements.audio.pause(),
     previoustrack: () => moveInQueue(-1),
     nexttrack: () => moveInQueue(1),
     seekbackward: (details) => seekBy(-(details.seekOffset || DEFAULT_SEEK_OFFSET)),
@@ -1016,14 +1002,15 @@ function registerMediaSessionActions() {
   }
 }
 
-function syncMediaSessionState() {
-  // WebKit can change the declared state while loading media. Always repair
-  // it before publishing position so the system timeline advances correctly.
-  updateMediaSessionPlaybackState();
-  updateMediaSessionPosition();
+function useNativeMediaSessionControls() {
+  const agent = navigator.userAgent || "";
+  return /AppleWebKit\//.test(agent) && !/(?:Chrome|Chromium|Edg|OPR)\/|Android/.test(agent);
 }
 
 function updateMediaSessionPlaybackState() {
+  // Let WebKit derive transport state from the single media element rather
+  // than starting a competing DOM Media Session platform session.
+  if (useNativeMediaSessionControls()) return;
   const mediaSession = getMediaSession();
   if (!mediaSession || !("playbackState" in mediaSession)) return;
   try {
