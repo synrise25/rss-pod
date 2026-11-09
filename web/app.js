@@ -496,6 +496,18 @@ function selectEpisode(episode, { autoplay = false, resumeAt = 0 } = {}) {
       { once: true, signal: audioEvents.signal },
     );
   }
+  if (prefetched) {
+    // A download can succeed even when CSP or the decoder rejects Blob
+    // playback. Retry its original URL once, preserving the latest intent.
+    let fallbackAutoplay = autoplay;
+    const options = { signal: audioEvents.signal };
+    elements.audio.addEventListener("play", () => { fallbackAutoplay = true; }, options);
+    elements.audio.addEventListener("pause", () => { fallbackAutoplay = false; }, options);
+    elements.audio.addEventListener("error", () => {
+      if (activeAudioObjectURL !== prefetched) return;
+      selectEpisode(episode, { autoplay: fallbackAutoplay, resumeAt: elements.audio.currentTime || resumeAt });
+    }, { once: true, signal: audioEvents.signal });
+  }
   elements.audio.preload = autoplay ? "auto" : "metadata";
   elements.audio.src = prefetched || episode.audioURL;
   elements.audio.load();

@@ -79,6 +79,12 @@ func TestAdminDisabledAndGuard(t *testing.T) {
 		if rr.Header().Get("Cache-Control") != "no-store" {
 			t.Fatal("admin response must not be cached")
 		}
+		if tc.method == "GET" && tc.status == http.StatusOK {
+			policy := rr.Header().Get("Content-Security-Policy")
+			if !strings.Contains(policy, "media-src 'self' https: http: blob:;") || !strings.Contains(policy, "script-src 'self';") {
+				t.Fatalf("admin policy must allow downloaded audio and retain same-origin scripts: %s", policy)
+			}
+		}
 	}
 }
 

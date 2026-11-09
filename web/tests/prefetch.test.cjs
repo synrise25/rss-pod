@@ -240,3 +240,65 @@ test('completed downloads are released after playback switches away', async () =
   assert.equal(c.activeAudioObjectURL, null);
   assert.equal(audio.src, queue[0].audioURL);
 });
+
+test('blocked Blob playback falls back once and preserves autoplay and resume', async () => {
+  const { context: c, audio, queue, revoked, complete } = fixture();
+  let plays = 0;
+  c.safePlay = () => plays++;
+  c.updateNextAudio();
+  await complete();
+  c.selectEpisode(queue[1], { autoplay: true, resumeAt: 12 });
+  audio.dispatchEvent(new Event('error'));
+  assert.equal(audio.src, queue[1].audioURL);
+  assert.equal(audio.loads, 2);
+  assert.equal(plays, 2);
+  assert.equal(c.activeAudioObjectURL, null);
+  assert.deepEqual(revoked, ['blob:audio-0']);
+  audio.dispatchEvent(new Event('loadedmetadata'));
+  assert.equal(audio.currentTime, 12);
+  audio.dispatchEvent(new Event('error'));
+  assert.equal(audio.loads, 2);
+  assert.equal(plays, 2);
+});
+
+test('Blob fallback respects a pause requested after track selection', async () => {
+  const { context: c, audio, queue, complete } = fixture();
+  let plays = 0;
+  c.safePlay = () => plays++;
+  c.updateNextAudio();
+  await complete();
+  c.selectEpisode(queue[1], { autoplay: true });
+  audio.dispatchEvent(new Event('pause'));
+  audio.dispatchEvent(new Event('error'));
+  assert.equal(audio.src, queue[1].audioURL);
+  assert.equal(plays, 1);
+  assert.equal(audio.paused, true);
+});
+
+test('Blob fallback respects a later play request and the current position', async () => {
+  const { context: c, audio, queue, complete } = fixture();
+  let plays = 0;
+  c.safePlay = () => plays++;
+  c.updateNextAudio();
+  await complete();
+  c.selectEpisode(queue[1], { resumeAt: 10 });
+  audio.dispatchEvent(new Event('loadedmetadata'));
+  audio.currentTime = 17;
+  audio.dispatchEvent(new Event('play'));
+  audio.dispatchEvent(new Event('error'));
+  assert.equal(audio.src, queue[1].audioURL);
+  assert.equal(plays, 1);
+  audio.dispatchEvent(new Event('loadedmetadata'));
+  assert.equal(audio.currentTime, 17);
+});
+
+test('stale Blob errors cannot restore an old selection', async () => {
+  const { context: c, audio, queue, complete } = fixture();
+  c.updateNextAudio();
+  await complete();
+  c.selectEpisode(queue[1]);
+  c.selectEpisode(queue[2]);
+  audio.dispatchEvent(new Event('error'));
+  assert.equal(audio.src, queue[2].audioURL);
+  assert.equal(audio.loads, 2);
+});
