@@ -66,7 +66,7 @@ func (s *adminServer) register(mux *http.ServeMux) {
 
 func (s *adminServer) page(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' https: http:; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'")
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' https: http: blob:; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'")
 	// Serve the same player shell; the admin bootstrap shows login before loading cards.
 	data, err := webui.Files.ReadFile("index.html")
 	if err != nil {
