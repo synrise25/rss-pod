@@ -505,7 +505,8 @@ function selectEpisode(episode, { autoplay = false, resumeAt = 0 } = {}) {
     elements.audio.addEventListener("pause", () => { fallbackAutoplay = false; }, options);
     elements.audio.addEventListener("error", () => {
       if (activeAudioObjectURL !== prefetched) return;
-      selectEpisode(episode, { autoplay: fallbackAutoplay, resumeAt: elements.audio.currentTime || resumeAt });
+      const fallbackResumeAt = state.restoringResume ? resumeAt : elements.audio.currentTime;
+      selectEpisode(episode, { autoplay: fallbackAutoplay, resumeAt: fallbackResumeAt });
     }, { once: true, signal: audioEvents.signal });
   }
   elements.audio.preload = autoplay ? "auto" : "metadata";

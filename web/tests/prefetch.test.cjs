@@ -302,3 +302,17 @@ test('stale Blob errors cannot restore an old selection', async () => {
   assert.equal(audio.src, queue[2].audioURL);
   assert.equal(audio.loads, 2);
 });
+
+test('Blob fallback preserves a seek to zero after the saved position was restored', async () => {
+  const { context: c, audio, queue, complete } = fixture();
+  c.updateNextAudio();
+  await complete();
+  c.selectEpisode(queue[1], { resumeAt: 10 });
+  audio.dispatchEvent(new Event('loadedmetadata'));
+  assert.equal(audio.currentTime, 10);
+  audio.currentTime = 0;
+  audio.dispatchEvent(new Event('error'));
+  assert.equal(audio.src, queue[1].audioURL);
+  audio.dispatchEvent(new Event('loadedmetadata'));
+  assert.equal(audio.currentTime, 0);
+});
